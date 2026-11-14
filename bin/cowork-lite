@@ -1,0 +1,42 @@
+#!/bin/bash
+# cowork-lite 명령 분배기
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIB="$HERE/../lib"
+for f in common manifest settings space guard prereq doctor setup; do
+  if ! source "$LIB/$f.sh" 2>/dev/null; then
+    echo "설치 파일이 손상되었습니다. 한 줄 설치 명령을 다시 붙여넣어 주세요."
+    exit 1
+  fi
+done
+
+usage() {
+  cat <<EOF
+cowork-lite 사용법
+  cowork-lite setup                  설치를 이어서 진행하거나 다시 점검합니다
+  cowork-lite doctor                 설치 상태를 점검합니다
+  cowork-lite space ls [폴더]        작업 폴더 목록을 봅니다
+  cowork-lite space find <단어>      작업 폴더에서 파일을 찾습니다
+  cowork-lite space rm <경로…>       확인 후 휴지통으로 옮깁니다
+  cowork-lite space restore <경로>   휴지통에서 되돌립니다
+  cowork-lite uninstall              제거합니다(작업 폴더는 지우지 않습니다)
+EOF
+}
+
+cmd="${1:-help}"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  setup)     setup_run ;;
+  doctor)    doctor_run ;;
+  uninstall) uninstall_run ;;
+  space)
+    sub="${1:-}"; [ $# -gt 0 ] && shift
+    case "$sub" in
+      ls)      space_ls "$@" ;;
+      find)    space_find "$@" ;;
+      rm)      space_rm "$@" ;;
+      restore) space_restore "$@" ;;
+      *)       usage; exit 2 ;;
+    esac ;;
+  update|packs) echo "아직 지원하지 않는 기능입니다." ;;
+  help|-h|--help) usage ;;
+  *) usage; exit 2 ;;
+esac
