@@ -1,0 +1,13 @@
+# 쉘 스크립트와 설치기가 읽는 파일은 Windows에서도 항상 LF여야 한다(CRLF면 bash가 실행하지 못한다).
+* text=auto eol=lf
+*.sh text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+bin/* text eol=lf
+hooks/* text eol=lf
+lib/shim/plutil text eol=lf
+VERSION text eol=lf
+# 배치 파일은 CRLF여야 안전하다(위의 bin/* 규칙보다 뒤에 둬야 .cmd가 덮어쓴다).
+*.cmd text eol=crlf
+# Windows PowerShell 5.1은 BOM 없는 UTF-8을 ANSI로 읽으므로 .ps1은 CRLF를 허용한다.
+*.ps1 text eol=crlf

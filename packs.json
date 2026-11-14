@@ -4,14 +4,16 @@
       "name": "Claude Code",
       "min": "0.0.0",
       "official": "https://docs.claude.com/en/docs/claude-code/setup",
-      "installer_url": "https://claude.ai/install.sh"
+      "installer_url": "https://claude.ai/install.sh",
+      "winget_id": "Anthropic.ClaudeCode"
     },
     "node": {
       "name": "Node.js",
       "min": "20.0.0",
       "official": "https://nodejs.org/",
       "index_url": "https://nodejs.org/dist/index.json",
-      "pkg_base": "https://nodejs.org/dist"
+      "pkg_base": "https://nodejs.org/dist",
+      "winget_id": "OpenJS.NodeJS.LTS"
     }
   }
 }

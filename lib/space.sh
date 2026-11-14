@@ -15,34 +15,73 @@ space_init() {
 }
 
 # _space_resolve <경로> : 심볼릭 링크·..을 풀어 실제 경로를 출력한다. 없는 경로도 처리한다.
+# Windows에서 같은 위치가 여러 표기로 나온다(`C:\x`, `C:/x`, `/c/x`, MSYS의 `/tmp/x`, 8.3 짧은 이름, 대소문자).
+# 문자열 비교로 폴더를 판정하므로 입력은 POSIX로 바꾸고 출력은 항상 하나의 표기로 맞춘다.
+# 아래 `_r` 함수들은 결과를 REPLY 변수에 둔다($(...)로 받으면 프로세스를 새로 띄워 느리다). 외부 명령은 쓰지 않는다.
+_space_to_posix_r() {
+  local p="$1" d
+  if cl_is_windows; then
+    if [[ "$p" =~ ^([A-Za-z]):([\\/].*)?$ ]]; then
+      d="${BASH_REMATCH[1]}"; p="${BASH_REMATCH[2]}"; p="${p//\\//}"; REPLY="/${d,,}${p}"; return
+    fi
+    p="${p//\\//}"
+  fi
+  REPLY="$p"
+}
+# MSYS의 /tmp는 사용자 %TEMP%와 같은 곳이다. 정션 대상이 /tmp/...로 풀려 나오면 /c/Users/... 표기와 문자열이 달라진다.
+# Git Bash 안에서는 $TEMP도 `/tmp`로 보이므로 cygpath로 실제 위치를 한 번만 알아낸다(/tmp 경로가 나올 때만 불린다).
+_space_tmp_posix() {
+  [ -n "${_SPACE_TMP:-}" ] && return
+  _space_to_posix_r "$(cygpath -m /tmp 2>/dev/null)"; _SPACE_TMP="${REPLY%/}"
+  [ -n "$_SPACE_TMP" ] || _SPACE_TMP=/tmp
+}
+_space_canon_r() {
+  local p="$1"
+  REPLY="$p"
+  cl_is_windows || return 0
+  case "$p" in /dev/*) return 0 ;; esac   # /dev/null 같은 가상 경로는 그대로 둔다
+  case "$p" in /tmp|/tmp/*) _space_tmp_posix; p="${_SPACE_TMP}${p#/tmp}" ;; esac
+  # 8.3 짧은 이름(COWORK~1)이 있을 때만 cygpath로 푼다(드문 경우라 프로세스 비용을 감수한다).
+  if [[ "$p" == *~[0-9]* ]] && command -v cygpath >/dev/null 2>&1; then
+    p="$(cygpath -u "$(cygpath -ml "$p" 2>/dev/null || printf '%s' "$p")" 2>/dev/null || printf '%s' "$p")"
+    case "$p" in /tmp|/tmp/*) _space_tmp_posix; p="${_SPACE_TMP}${p#/tmp}" ;; esac
+  fi
+  REPLY="$p"
+}
+
 _space_resolve() {
-  local p="$1" depth="${2:-0}" tail="" base target comp out d
+  local p="$1" depth="${2:-0}" tail="" base target comp out d dn
   local comps=() stack=() n=0 i
   [ "$depth" -gt 20 ] && { printf '%s\n' "$p"; return 0; }
+  if [ "$depth" -eq 0 ]; then _space_to_posix_r "$p"; p="$REPLY"; fi
   case "$p" in /*) ;; *) p="$PWD/$p" ;; esac
+  while [ "$p" != "/" ] && [ "${p%/}" != "$p" ]; do p="${p%/}"; done   # 끝의 / 제거
   while [ ! -e "$p" ] && [ ! -L "$p" ] && [ "$p" != "/" ]; do
-    tail="$(basename "$p")${tail:+/$tail}"; p="$(dirname "$p")"
+    tail="${p##*/}${tail:+/$tail}"; p="${p%/*}"; [ -n "$p" ] || p=/
   done
   if [ -L "$p" ]; then
     target="$(readlink "$p")"
-    case "$target" in /*) ;; *) d="$(dirname "$p")"; target="${d%/}/$target" ;; esac
+    case "$target" in /*) ;; *) d="${p%/*}"; [ -n "$d" ] || d=/; target="${d%/}/$target" ;; esac
     _space_resolve "${target}${tail:+/$tail}" $((depth+1)); return
   fi
   if [ -d "$p" ]; then
     base="$(cd -P "$p" && pwd -P)"
   else
-    base="$(cd -P "$(dirname "$p")" && pwd -P)/$(basename "$p")"
+    dn="${p%/*}"; [ -n "$dn" ] || dn=/
+    base="$(cd -P "$dn" && pwd -P)"; base="${base%/}/${p##*/}"
   fi
   if [ -n "$tail" ]; then
     IFS=/ read -r -a comps <<< "$tail"
     for comp in "${comps[@]}"; do
       case "$comp" in
         ""|.) ;;
-        ..) if [ "$n" -gt 0 ]; then n=$((n-1)); else base="$(dirname "$base")"; fi ;;
+        ..) if [ "$n" -gt 0 ]; then n=$((n-1)); else base="${base%/*}"; [ -n "$base" ] || base=/; fi ;;
         *) stack[$n]="$comp"; n=$((n+1)) ;;
       esac
     done
   fi
+  # 정규화는 실제로 있는 앞부분(base)에만 한다. 없는 뒷부분이 섞이면 짧은 이름이 풀리지 않는다.
+  _space_canon_r "$base"; base="$REPLY"
   out="$base"
   i=0
   while [ "$i" -lt "$n" ]; do
@@ -52,19 +91,30 @@ _space_resolve() {
   printf '%s\n' "$out"
 }
 
+# _space_rel_r <루트> <경로> : 경로가 루트 아래면 루트 이후 부분을 REPLY에 두고 0, 아니면 1. 루트 자신이면 REPLY가 비어 있다.
+# Windows(NTFS)는 대소문자를 구분하지 않으므로 비교만 소문자로 맞춰서 한다(`${x,,}`는 bash 4+, Windows Git Bash는 5).
+_space_rel_r() {
+  local rl="$1" pl="$2"
+  if cl_is_windows; then rl="${rl,,}"; pl="${pl,,}"; fi
+  case "$pl" in
+    "$rl") REPLY=""; return 0 ;;
+    "$rl"/*) REPLY="${2:$((${#1}+1))}"; return 0 ;;
+  esac
+  return 1
+}
+
 # space_classify <경로> → inbox|work|result|journal|internal|outside
 space_classify() {
   local root rp rel top
   root="$(_space_resolve "$(cl_space_root)")"
   rp="$(_space_resolve "$1")"
-  case "$rp" in
-    "$root") echo work; return ;;
-    "$root"/*) ;;
-    *) echo outside; return ;;
-  esac
-  rel="${rp#"$root"/}"; top="${rel%%/*}"
-  # 자모 분리(NFD) 한글 이름으로 폴더 판정을 피하지 못하게 NFC로 맞춘다
-  top="$(printf '%s' "$top" | iconv -f UTF-8-MAC -t UTF-8 2>/dev/null || printf '%s' "$top")"
+  _space_rel_r "$root" "$rp" || { echo outside; return; }
+  rel="$REPLY"
+  [ -n "$rel" ] || { echo work; return; }
+  top="${rel%%/*}"
+  # 자모 분리(NFD) 한글 이름으로 폴더 판정을 피하지 못하게 NFC로 맞춘다. NFD는 macOS 파일시스템 특성이라
+  # Windows에서는 건너뛴다(iconv 프로세스를 띄우는 비용만 든다).
+  cl_is_windows || top="$(printf '%s' "$top" | iconv -f UTF-8-MAC -t UTF-8 2>/dev/null || printf '%s' "$top")"
   case "$top" in
     받은자료) echo inbox ;;
     작업중) echo work ;;
@@ -83,10 +133,10 @@ space_backup() {
   fi
   root="$(_space_resolve "$(cl_space_root)")"
   rp="$(_space_resolve "$1")"
-  rel="${rp#"$root"/}"
+  _space_rel_r "$root" "$rp"; rel="$REPLY"
   base="$root/.cowork/backup/$(cl_stamp)"; dest="$base/$rel"
   while [ -e "$dest" ]; do n=$((n+1)); dest="$base-$n/$rel"; done
-  mkdir -p "$(dirname "$dest")" && cp -p "$rp" "$dest" && printf '%s\n' "$dest"
+  mkdir -p "${dest%/*}" && cp -p "$rp" "$dest" && printf '%s\n' "$dest"
 }
 
 # 확인 질문. 답은 COWORK_LITE_TTY(기본 /dev/tty)에서 읽고, 읽지 못하면 "아니오"로 본다.

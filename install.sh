@@ -35,6 +35,15 @@ for item in bin lib hooks packs.json VERSION; do
 done
 chmod +x "$home"/bin/* "$home"/hooks/*.sh
 
+# Windows용 래퍼(cowork-lite.cmd)는 줄 끝이 CRLF여야 cmd가 제대로 읽는다. 저장소에는 LF로 저장되어 있어
+# GitHub tarball로 받으면 LF만 있는 채로 들어온다(그러면 'rk-lite.'은(는) 인식되지 않습니다 같은 오류로 깨진다).
+# 설치 때마다 복사하므로 여기서 매번 맞춘다. awk만 써서 macOS의 BSD sed 차이를 피한다.
+# CR 유무는 grep이 아니라 tr로 센다(Windows Git Bash의 grep은 텍스트 모드라 줄 끝의 CR을 지우고 읽는다).
+if [ -f "$home/bin/cowork-lite.cmd" ] && [ "$(tr -cd '\r' < "$home/bin/cowork-lite.cmd" | wc -c)" -eq 0 ]; then
+  awk '{ printf "%s\r\n", $0 }' "$home/bin/cowork-lite.cmd" > "$home/bin/cowork-lite.cmd.tmp" \
+    && mv "$home/bin/cowork-lite.cmd.tmp" "$home/bin/cowork-lite.cmd"
+fi
+
 if [ "$NO_SETUP" = 1 ]; then
   echo "파일을 복사했습니다: $home"
   exit 0

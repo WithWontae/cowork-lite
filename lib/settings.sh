@@ -86,6 +86,26 @@ _settings_ours_indexes() {
   done
 }
 
+# settings_our_command <이벤트> : 그 이벤트에 등록된 우리 hook의 command 문자열을 출력한다. 없으면 1.
+# doctor가 등록된 명령을 Claude Code가 하는 것과 같은 방식으로 실제 실행해 볼 때 쓴다.
+settings_our_command() {
+  local f ev="$1" n m i j c; f="$(settings_path)"
+  [ -s "$f" ] || return 1
+  n="$(plutil -extract "hooks.$ev" raw -o - "$f" 2>/dev/null)" || return 1
+  i=0
+  while [ "$i" -lt "$n" ]; do
+    m="$(plutil -extract "hooks.$ev.$i.hooks" raw -o - "$f" 2>/dev/null)" || m=0
+    j=0
+    while [ "$j" -lt "$m" ]; do
+      c="$(plutil -extract "hooks.$ev.$i.hooks.$j.command" raw -o - "$f" 2>/dev/null)"
+      case "$c" in *"$SETTINGS_MARKER"*) printf '%s\n' "$c"; return 0 ;; esac
+      j=$((j+1))
+    done
+    i=$((i+1))
+  done
+  return 1
+}
+
 settings_has_hooks() {
   local f ev; f="$(settings_path)"
   [ -s "$f" ] || return 1

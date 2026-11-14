@@ -13,6 +13,16 @@ _prereq_name() { local n; n="$(_prereq_cfg "$1" name)" && printf '%s\n' "$n" || 
 prereq_refresh_path() {
   local list="${PREREQ_EXTRA_PATHS-$HOME/.local/bin:/usr/local/bin:/opt/homebrew/bin}" d
   local -a dirs
+  # Windows: 방금 설치한 도구는 이 셸의 PATH에 없다. 레지스트리의 Machine·User PATH를 다시 읽어 뒤에 붙인다.
+  # PREREQ_EXTRA_PATHS가 설정돼 있으면(테스트) 건드리지 않는다.
+  if [ "$(cl_os)" = windows ] && [ -z "${PREREQ_EXTRA_PATHS+x}" ]; then
+    local win p
+    win="$(powershell.exe -NoProfile -Command "[Environment]::GetEnvironmentVariable('Path','Machine')+';'+[Environment]::GetEnvironmentVariable('Path','User')" 2>/dev/null | tr -d '\r')"
+    if [ -n "$win" ] && command -v cygpath >/dev/null 2>&1; then
+      p="$(cygpath -u -p "$win" 2>/dev/null)"
+      [ -n "$p" ] && PATH="$PATH:$p"
+    fi
+  fi
   IFS=: read -r -a dirs <<< "$list"
   for d in "${dirs[@]}"; do
     [ -n "$d" ] && [ -d "$d" ] || continue
@@ -75,8 +85,17 @@ _prereq_download() {
   if curl -fsSL -o "$tmp" "$1" 2>/dev/null; then mv "$tmp" "$2"; else rm -f "$tmp"; return 1; fi
 }
 
+# Windows: winget으로 설치한다(관리자 권한 확인 창이 뜰 수 있다).
+_prereq_winget_install() {
+  local id
+  id="$(_prereq_cfg "$1" winget_id)" || return 1
+  command -v winget >/dev/null 2>&1 || { cl_warn "winget을 찾을 수 없습니다."; return 1; }
+  winget install --id "$id" -e --source winget --accept-package-agreements --accept-source-agreements
+}
+
 _prereq_real_install() {
   local tool="$1" dir url pkg rc=0
+  [ "$(cl_os)" = windows ] && { _prereq_winget_install "$tool"; return $?; }
   dir="$(mktemp -d "${TMPDIR:-/tmp}/cowork-lite-dl.XXXXXX")" || return 1
   case "$tool" in
     claude)
@@ -100,7 +119,13 @@ _prereq_real_install() {
 prereq_install() {
   local tool="$1" name; name="$(_prereq_name "$tool")"
   cl_say "$name 을(를) 설치합니다. 몇 분 걸릴 수 있습니다."
-  [ "$tool" = node ] && cl_say "암호 입력 창이 나오면 Mac 로그인 암호를 입력해 주세요. (입력해도 화면에 글자가 보이지 않는 것이 정상입니다)"
+  if [ "$tool" = node ]; then
+    if [ "$(cl_os)" = windows ]; then
+      cl_say "권한 확인 창이 나오면 [예]를 눌러 주세요."
+    else
+      cl_say "암호 입력 창이 나오면 Mac 로그인 암호를 입력해 주세요. (입력해도 화면에 글자가 보이지 않는 것이 정상입니다)"
+    fi
+  fi
   if [ -n "$COWORK_LITE_RUNNER" ]; then "$COWORK_LITE_RUNNER" install "$tool"; else _prereq_real_install "$tool"; fi
 }
 

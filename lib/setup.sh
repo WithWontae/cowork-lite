@@ -22,6 +22,28 @@ _setup_lock() { cl_lock_acquire; }
 _setup_unlock() { cl_lock_release; }
 
 # 질문. COWORK_LITE_YES가 있으면 묻지 않고 기본값을 쓴다. 답은 COWORK_LITE_TTY(기본 /dev/tty)에서 읽는다.
+# PATH 한 줄을 넣을 터미널 설정 파일. Mac은 zsh, Windows는 Git Bash(로그인 셸이 읽는 .bash_profile).
+_setup_rcfile() {
+  case "$(cl_os)" in
+    windows) printf '%s\n' "$HOME/.bash_profile" ;;
+    *)       printf '%s\n' "$HOME/.zshrc" ;;
+  esac
+}
+_setup_rcname() { case "$(cl_os)" in windows) echo "~/.bash_profile" ;; *) echo "~/.zshrc" ;; esac; }
+
+# Windows: 사용자 PATH(레지스트리)에 설치 폴더의 bin을 넣거나 뺀다(PowerShell·명령 프롬프트에서 cowork-lite 명령을 쓰기 위해).
+# _setup_userpath <add|remove>. 결과(added|already|removed|absent)를 출력하고, 실패하면 1을 돌려준다.
+# 이 단계를 실패해도 Git Bash에서는 명령을 쓸 수 있으므로 호출하는 쪽에서 치명적으로 다루지 않는다.
+_setup_userpath() {
+  local out win ps1 home; home="$(cl_home)"
+  cl_is_windows || return 0
+  command -v powershell.exe >/dev/null 2>&1 || return 0   # Windows가 아닌 곳에서 OS를 windows로 덮어쓴 테스트
+  win="$(cygpath -w "$home/bin" 2>/dev/null)" && ps1="$(cygpath -w "$home/lib/userpath.ps1" 2>/dev/null)" || return 1
+  out="$(powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$ps1" "$1" "$win" 2>/dev/null | tr -d '\r')"
+  printf '%s\n' "$out"
+  case "$out" in added|already|removed|absent) return 0 ;; *) return 1 ;; esac
+}
+
 _setup_ask() {
   local ans=""
   if [ -n "$COWORK_LITE_YES" ]; then printf '%s\n' "$2"; return; fi
@@ -42,7 +64,7 @@ _setup_space() {
   local root f; root="$(cl_space_root)"
   space_init >/dev/null || return 1
   cl_json_set "$(cl_home)/local.json" space.root "$root" || return 1
-  cl_json_set "$(cl_home)/local.json" device.name "$(hostname -s 2>/dev/null || echo mac)" || return 1
+  cl_json_set "$(cl_home)/local.json" device.name "$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo pc)" || return 1
   f="$root/.cowork-lite/shared.json"
   cl_json_get "$f" space.modify_policy >/dev/null || cl_json_set "$f" space.modify_policy backup || return 1
   cl_say "작업 폴더를 준비했습니다: $root"
@@ -50,29 +72,40 @@ _setup_space() {
 
 _setup_hooks() {
   local home; home="$(cl_home)"
-  settings_register_hooks "$home/hooks/session.sh" "$home/hooks/guard.sh" || return 1
+  # 경로에 공백·한글이 있어도(Windows 사용자 이름 등) 명령이 깨지지 않게 따옴표로 감싼다.
+  settings_register_hooks "\"$home/hooks/session.sh\"" "\"$home/hooks/guard.sh\"" || return 1
   manifest_add file "$home/hooks/session.sh"
   manifest_add file "$home/hooks/guard.sh"
   cl_say "Claude에 안전장치 2개를 등록했습니다."
 }
 
 _setup_path() {
-  local zshrc="$HOME/.zshrc" home; home="$(cl_home)"
+  local zshrc home; zshrc="$(_setup_rcfile)"; home="$(cl_home)"
   [ -f "$zshrc" ] || : > "$zshrc" || return 1
   if ! grep -qF "$SETUP_MARK_BEGIN" "$zshrc"; then
     printf '\n%s\nexport PATH="%s/bin:$PATH"\n%s\n' "$SETUP_MARK_BEGIN" "$home" "$SETUP_MARK_END" >> "$zshrc" || return 1
     manifest_add pathblock "$zshrc"
   fi
   cl_say "터미널에서 cowork-lite 명령을 쓸 수 있게 했습니다. (새 터미널부터 적용됩니다)"
+  if cl_is_windows; then
+    if _setup_userpath add >/dev/null; then
+      manifest_add userpath "$home/bin"
+      cl_say "PowerShell·명령 프롬프트에서도 cowork-lite 명령을 쓸 수 있게 했습니다. (새 창부터 적용됩니다)"
+    else
+      cl_warn "PowerShell·명령 프롬프트용 경로는 등록하지 못했습니다. Git Bash에서는 cowork-lite 명령을 쓸 수 있습니다."
+    fi
+  fi
 }
 
 _setup_path_remove() {
-  local zshrc="$HOME/.zshrc" tmp
+  local zshrc tmp; zshrc="$(_setup_rcfile)"
+  # Windows 사용자 PATH(레지스트리)는 터미널 설정 파일과 별개라 파일이 없어도 먼저 되돌린다.
+  if cl_is_windows; then _setup_userpath remove >/dev/null 2>&1; manifest_remove_all_of userpath; fi
   [ -f "$zshrc" ] || return 0
   grep -qF "$SETUP_MARK_BEGIN" "$zshrc" || { manifest_remove_all_of pathblock; return 0; }
   # 시작·끝 표식이 둘 다 있을 때만 지운다(끝 표식이 없으면 사용자 줄까지 지울 수 있다)
   if ! grep -qF "$SETUP_MARK_END" "$zshrc"; then
-    cl_warn "~/.zshrc의 cowork-lite 표시가 일부 지워져 있어 건드리지 않았습니다. 직접 확인해 주세요."
+    cl_warn "$(_setup_rcname)의 cowork-lite 표시가 일부 지워져 있어 건드리지 않았습니다. 직접 확인해 주세요."
     return 0
   fi
   tmp="$(mktemp "$zshrc.XXXXXX")" || return 1
@@ -111,7 +144,8 @@ _setup_step() {
 _setup_preview() {
   cl_say "설치하기 전에 확인해 주세요. 아래 내용이 바뀝니다."
   cl_say "- Claude에 안전장치(hook) 2개를 등록합니다. 바뀌는 파일: $(settings_path) (바꾸기 전에 자동으로 백업합니다)"
-  cl_say "- 터미널 설정 파일(~/.zshrc)에 cowork-lite 명령 경로를 한 줄 추가합니다."
+  cl_say "- 터미널 설정 파일($(_setup_rcname))에 cowork-lite 명령 경로를 한 줄 추가합니다."
+  cl_is_windows && cl_say "- 사용자 환경 변수 PATH에 cowork-lite 폴더를 추가합니다. (PowerShell·명령 프롬프트용, 제거하면 되돌립니다)"
   cl_say "- 작업 폴더를 만듭니다: $(cl_space_root) (받은자료·작업중·결과물·업무일지)"
   cl_say "- 설치 위치: $(cl_home)"
   [ -n "$COWORK_LITE_YES" ] && return 0
@@ -152,6 +186,13 @@ uninstall_run() {
     return 1
   }
   _setup_path_remove
-  for item in bin lib hooks state packs.json VERSION manifest.tsv; do rm -rf "${home:?}/$item"; done
+  for item in lib hooks state packs.json VERSION manifest.tsv; do rm -rf "${home:?}/$item"; done
+  if [ -n "${COWORK_LITE_VIA_CMD:-}" ] && [ -f "$home/bin/cowork-lite.cmd" ]; then
+    # cowork-lite.cmd 래퍼로 실행 중이다. 실행 중인 배치 파일을 지우면 cmd가 "배치 파일을 찾을 수 없습니다"를 내므로
+    # 지우지 않고 표시 파일만 남긴다. 래퍼가 끝난 뒤 스스로 지운다.
+    rm -f "$home/bin/cowork-lite"; : > "$home/bin/uninstalled.flag"
+  else
+    rm -rf "${home:?}/bin"
+  fi
   cl_say "제거했습니다. 작업 폴더($root)와 설정 백업은 그대로 남겨 두었습니다."
 }

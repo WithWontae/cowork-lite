@@ -29,6 +29,11 @@ _guard_is_system() {
 _guard_is_tmp() {
   local t
   case "$1" in /tmp/*|/private/tmp/*|/private/var/folders/*|/var/folders/*|/dev/*) return 0 ;; esac
+  # Windows: 경로를 통일하면 /tmp 가 실제 Temp 위치(/c/Users/…/Temp)로 나온다. 대소문자는 구분하지 않는다.
+  if cl_is_windows; then
+    _space_tmp_posix
+    case "${1,,}" in "${_SPACE_TMP,,}"/*) return 0 ;; esac
+  fi
   if [ -n "$TMPDIR" ]; then
     t="$(_space_resolve "$TMPDIR")"
     case "$1" in "$t"/*) return 0 ;; esac
@@ -112,20 +117,20 @@ guard_decide_file() {
 
 # ---------------------------------------------------------------- Bash
 
+# 명령을 세그먼트(줄)로 나눈다. 예전의 sed 여러 개와 같은 순서·같은 결과이고, 프로세스를 띄우지 않는다.
 _guard_split_segments() {
-  printf '%s' "$1" | sed -e 's/>|/>/g' -e 's/\$(/\
-/g' -e 's/`/\
-/g' -e 's/&&/\
-/g' -e 's/||/\
-/g' -e 's/[;|()&]/\
-/g'
+  local s="${1//>|/>}" nl=$'\n'
+  s="${s//\$\(/$nl}"; s="${s//\`/$nl}"; s="${s//&&/$nl}"; s="${s//||/$nl}"
+  s="${s//[;|()&]/$nl}"
+  printf '%s\n' "$s"
 }
 
 # 따옴표를 풀어 한 줄에 토큰 하나로 나눈다. 실패하면 단순 공백 분리로 대체한다.
 _guard_tokenize() {
   local seg="$1" t line
   _GT=()
-  t="$(printf '%s\n' "$seg" | xargs -n1 printf '%s\n' 2>/dev/null)" || t=""
+  # -n1 을 쓰면 토큰마다 printf 프로세스가 따로 뜬다(Windows에서 느림). 한 번에 넘겨도 출력은 같다.
+  t="$(printf '%s\n' "$seg" | xargs printf '%s\n' 2>/dev/null)" || t=""
   if [ -z "$t" ]; then t="$(set -f; printf '%s\n' $seg)"; fi
   while IFS= read -r line; do
     [ -n "$line" ] && _GT[${#_GT[@]}]="$line"
@@ -314,13 +319,15 @@ guard_decide_bash() {
   # _GUARD_CTX: 쓰기 대상 판정에 Bash 문맥임을 알린다. _GUARD_CD: 앞 세그먼트에 cd가 있었는지
   # (그 뒤의 상대 경로는 정확한 위치를 알 수 없다). 둘 다 동적 범위로 하위 함수가 읽는다.
   local cmd="$1" depth="${2:-0}" segs seg r best="" _GUARD_CTX=bash _GUARD_CD="${_GUARD_CD:-0}"
+  local cd_re='(^|[[:space:]])(cd|pushd)([[:space:]]|$)'
   [ -n "$cmd" ] || { _guard_out allow ""; return; }
   segs="$(_guard_split_segments "$cmd")"
   while IFS= read -r seg; do
-    [ -n "$(printf '%s' "$seg" | tr -d ' \t')" ] || continue
+    # 공백·탭뿐인 세그먼트는 건너뛴다(tr·grep 프로세스 대신 bash 내장 기능)
+    [ -n "${seg//[ $'\t']/}" ] || continue
     r="$(_guard_segment "$seg" "$depth")"
     _guard_consider "$r" || return
-    if printf '%s' "$seg" | grep -Eq '(^|[[:space:]])(cd|pushd)([[:space:]]|$)'; then _GUARD_CD=1; fi
+    if [[ "$seg" =~ $cd_re ]]; then _GUARD_CD=1; fi
   done <<< "$segs"
   if [ -n "$best" ]; then printf '%s\n' "$best"; else _guard_out allow ""; fi
 }
@@ -328,9 +335,11 @@ guard_decide_bash() {
 # guard_log <level> <tool> <note> : 경로·내용은 남기지 않는다(영문·숫자·_ 만).
 guard_log() {
   local level tool note root
-  level="$(printf '%s' "$1" | tr -cd 'a-z_')"
-  tool="$(printf '%s' "$2" | tr -cd 'A-Za-z0-9_')"
-  note="$(printf '%s' "$3" | tr -cd 'A-Za-z0-9_')"
+  # 허용 문자 밖은 지운다(tr -cd 와 같은 동작, 프로세스를 띄우지 않는다). 문자 범위가 로케일 순서를 따르지 않게 한다.
+  shopt -s globasciiranges 2>/dev/null
+  level="${1//[^a-z_]/}"
+  tool="${2//[^A-Za-z0-9_]/}"
+  note="${3//[^A-Za-z0-9_]/}"
   root="$(cl_space_root)"
   [ -d "$root" ] || return 0
   mkdir -p "$root/.cowork" 2>/dev/null || return 0

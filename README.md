@@ -2,9 +2,38 @@
 
 Claude Code를 안전하게, 설치 한 번으로 쓰게 해 주는 도구입니다. 내 파일을 AI가 마음대로 지우거나 덮어쓰지 못하게 지켜 주고, 업무 파일은 한 곳(`cowork-space` 폴더)에 모읍니다.
 
-> 지금은 **Mac**만 지원합니다. Windows는 준비 중입니다.
+> **Mac**과 **Windows 11**을 지원합니다. 아래에서 쓰는 컴퓨터에 맞는 쪽을 따라 하세요.
 
-## 설치하기
+## 설치하기 (Windows)
+
+### 1단계. PowerShell 열기
+
+1. 키보드의 `Windows` 키를 누릅니다.
+2. **PowerShell**이라고 입력하고 엔터를 누릅니다. (관리자 권한으로 열 필요는 없습니다)
+
+### 2단계. 설치 명령 붙여넣기
+
+아래 한 줄을 복사해서 PowerShell 창에 붙여넣고(마우스 오른쪽 클릭) 엔터를 누릅니다.
+
+```
+irm https://raw.githubusercontent.com/WithWontae/cowork-lite/main/install.ps1 | iex
+```
+
+### 3단계. 화면의 안내 따라가기
+
+- Git이 없으면 먼저 설치합니다. **권한 확인 창**이 나오면 `예`를 누르세요. 몇 분 걸릴 수 있습니다.
+- 필요한 프로그램(Claude Code, Node.js)이 없으면 자동으로 설치합니다.
+- 바뀌는 내용을 먼저 보여 드립니다. 확인하고 `예`를 입력하면 설치가 진행됩니다.
+- 마지막에 **모두 초록불 ✔** 이 나오면 끝입니다.
+- `cowork-lite` 명령은 **새로 연 PowerShell·명령 프롬프트·Git Bash 창**부터 쓸 수 있습니다.
+
+### 안 될 때 (Windows)
+
+- "다시 실행해 주세요"라고 나오면 같은 명령을 한 번 더 붙여넣으세요. 끝낸 단계는 건너뛰고 이어서 진행합니다.
+- 회사 PC에서 설치가 막히면 화면에 나온 "IT 담당자에게 요청할 내용"을 그대로 전달해 주세요.
+- 그래도 안 되면 새 창에서 `cowork-lite doctor`를 실행한 화면을 캡처해서 알려 주세요.
+
+## 설치하기 (Mac)
 
 ### 1단계. 터미널 열기
 
@@ -27,7 +56,7 @@ curl -fsSL https://raw.githubusercontent.com/WithWontae/cowork-lite/main/install
 - 바뀌는 내용을 먼저 보여 드립니다. 확인하고 `예`를 입력하면 설치가 진행됩니다.
 - 마지막에 **모두 초록불 ✔** 이 나오면 끝입니다.
 
-### 안 될 때
+### 안 될 때 (Mac)
 
 - "터미널을 닫고 다시 열어 같은 명령을 한 번 더 붙여넣어 주세요"라고 나오면 그대로 하세요. 끝낸 단계는 건너뛰고 이어서 진행합니다.
 - 회사 PC에서 설치가 막히면 화면에 나온 "IT 담당자에게 요청할 내용"을 그대로 전달해 주세요.
@@ -66,9 +95,10 @@ curl -fsSL https://raw.githubusercontent.com/WithWontae/cowork-lite/main/install
 cowork-lite uninstall
 ```
 
-작업 폴더(`cowork-space`)의 파일은 지우지 않습니다.
+작업 폴더(`cowork-space`)의 파일은 지우지 않습니다. Windows에서는 PowerShell 환경 변수(PATH)에 추가했던 항목도 되돌립니다.
 
 ## 알아 두세요
 
+- Windows에서는 Claude Code가 안전장치를 실행할 때 **Git Bash**를 씁니다. 그래서 설치할 때 Git이 함께 설치됩니다.
 - 이 도구의 안전장치는 **실수를 막아 주는 장치**입니다. 일부러 우회하려는 시도까지 막지는 못합니다.
 - 비밀번호·인증서·주민번호·계좌 같은 민감정보는 AI에게 기억시키지 마세요.

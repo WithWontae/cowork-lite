@@ -5,6 +5,28 @@
 _doc_ok()  { cl_say "✔ $1"; }
 _doc_bad() { cl_say "✘ $1"; cl_say "   → 다음에 할 일: $2"; DOCTOR_FAILS=$((DOCTOR_FAILS+1)); }
 
+# doctor_check_registered_hooks <작업 폴더>
+doctor_check_registered_hooks() {
+  local root="$1" cmd out ok=1
+  # 세션 시작 hook: 첫 줄이 [cowork-lite] 머리말이어야 한다.
+  if cmd="$(settings_our_command SessionStart)"; then
+    out="$(bash -c "$cmd" 2>/dev/null </dev/null | head -1)"
+    case "$out" in "[cowork-lite]"*) ;; *) ok=0 ;; esac
+  else
+    ok=0
+  fi
+  # Guard hook: 받은자료 수정 시도를 실제 입력 형식으로 보내 deny가 나와야 한다.
+  if cmd="$(settings_our_command PreToolUse)"; then
+    out="$(printf '{"tool_name":"Edit","cwd":"%s","tool_input":{"file_path":"%s/받은자료/.doctor-probe"}}' "$root" "$root" \
+      | bash -c "$cmd" 2>/dev/null)"
+    case "$out" in *'"permissionDecision":"deny"'*) ;; *) ok=0 ;; esac
+  else
+    ok=0
+  fi
+  if [ "$ok" = 1 ]; then _doc_ok "Claude에 등록된 안전장치 명령이 실제로 실행됩니다"
+  else _doc_bad "Claude에 등록된 안전장치 명령이 실행되지 않습니다(경로가 깨졌을 수 있습니다)" "cowork-lite setup 을 다시 실행해 주세요"; fi
+}
+
 doctor_run() {
   local home root f d kind path probe res
   DOCTOR_FAILS=0
@@ -27,6 +49,10 @@ doctor_run() {
     if [ -x "$home/hooks/$f" ]; then _doc_ok "hook 파일($f)을 실행할 수 있습니다"
     else _doc_bad "hook 파일($f)이 없거나 실행 권한이 없습니다" "cowork-lite setup 을 다시 실행해 주세요"; fi
   done
+
+  # 등록된 명령을 Claude Code가 하는 것과 같은 방식(bash -c)으로 실제 실행해 본다. 파일이 있고 실행 권한이 있어도
+  # 등록된 명령의 경로가 깨져 있으면(역슬래시 등) Claude Code는 hook 실패를 넘기고 보호가 조용히 꺼진다.
+  doctor_check_registered_hooks "$root"
 
   for d in 받은자료 작업중 결과물 업무일지 .cowork; do
     if [ -d "$root/$d" ]; then _doc_ok "작업 폴더에 '$d' 폴더가 있습니다"
