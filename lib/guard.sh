@@ -35,7 +35,7 @@ _guard_is_tmp() {
     case "${1,,}" in "${_SPACE_TMP,,}"/*) return 0 ;; esac
   fi
   if [ -n "$TMPDIR" ]; then
-    t="$(_space_resolve "$TMPDIR")"
+    _space_resolve_r "$TMPDIR"; t="$REPLY"
     case "$1" in "$t"/*) return 0 ;; esac
   fi
   return 1
@@ -72,9 +72,9 @@ _guard_write_level() {
       *)          _guard_out ask "폴더를 옮긴 뒤의 상대 경로라 정확한 위치를 알 수 없습니다. 계속할까요?"; return ;;
     esac
   fi
-  rp="$(_space_resolve "$p")"
+  _space_resolve_r "$p"; rp="$REPLY"
   if _guard_is_system "$rp"; then _guard_out deny "시스템 폴더는 바꿀 수 없습니다."; return; fi
-  cls="$(space_classify "$p")"
+  space_classify_r "$p"; cls="$REPLY"
   case "$cls" in
     inbox)    _guard_out deny "받은자료의 원본은 바꿀 수 없습니다. 작업중 폴더로 복사해서 작업할까요?" ;;
     internal) _guard_out deny "내부 관리 폴더라 직접 바꿀 수 없습니다." ;;
@@ -102,9 +102,10 @@ guard_decide_file() {
   esac
   out="$(_guard_write_level "$path")"
   if [ "${out%%$'\t'*}" != allow ]; then printf '%s\n' "$out"; return; fi
-  cls="$(space_classify "$path")"
+  space_classify_r "$path"; cls="$REPLY"
   if [ "$cls" != outside ] && [ -e "$path" ]; then
-    policy="$(cl_json_get "$(cl_space_root)/.cowork-lite/shared.json" space.modify_policy)"
+    cl_space_root_r
+    policy="$(cl_json_get "$REPLY/.cowork-lite/shared.json" space.modify_policy)"
     if [ "$policy" = ask ]; then
       _guard_out ask "작업 중인 파일을 바꾸려고 합니다. 계속할까요?"
     else
@@ -340,8 +341,9 @@ guard_log() {
   level="${1//[^a-z_]/}"
   tool="${2//[^A-Za-z0-9_]/}"
   note="${3//[^A-Za-z0-9_]/}"
-  root="$(cl_space_root)"
+  cl_space_root_r; root="$REPLY"
   [ -d "$root" ] || return 0
-  mkdir -p "$root/.cowork" 2>/dev/null || return 0
+  # 폴더가 이미 있으면 mkdir 프로세스를 띄우지 않는다(판정마다 불리므로 Windows에서 80ms를 아낀다).
+  [ -d "$root/.cowork" ] || mkdir -p "$root/.cowork" 2>/dev/null || return 0
   printf '{"t":"%s","level":"%s","tool":"%s","note":"%s"}\n' "$(cl_stamp)" "$level" "$tool" "$note" >> "$root/.cowork/log.jsonl"
 }

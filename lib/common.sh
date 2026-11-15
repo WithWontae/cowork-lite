@@ -6,8 +6,21 @@
 # 속도 주의(Windows): 프로세스 하나를 띄우는 데 약 0.1초가 든다. 경로 판정처럼 자주 도는 곳에서는
 # uname·tr·basename·dirname·cygpath 같은 외부 명령 대신 bash 내장 기능만 쓴다.
 _cl_d="${BASH_SOURCE[0]}"; case "$_cl_d" in */*) _cl_d="${_cl_d%/*}" ;; *) _cl_d=. ;; esac
-CL_SHIM_DIR="$(cd "$_cl_d" && pwd)/shim"; unset _cl_d
-_cl_plutil_path="$(type -P plutil 2>/dev/null)"
+# 서브셸(`$(cd … && pwd)`)은 Windows에서 fork 한 번에 25ms 안팎이라, 절대 경로면 문자열로만 정리한다(`/x/hooks/../lib` → `/x/lib`).
+case "$_cl_d" in
+  /*|[A-Za-z]:*)
+    while [[ "$_cl_d" == */../* ]]; do _cl_pre="${_cl_d%%/../*}"; _cl_d="${_cl_pre%/*}/${_cl_d#*/../}"; done
+    unset _cl_pre; CL_SHIM_DIR="$_cl_d/shim" ;;
+  *) CL_SHIM_DIR="$(cd "$_cl_d" && pwd)/shim" ;;
+esac
+unset _cl_d
+# `$(type -P plutil)` 대신 PATH를 직접 훑는다(같은 결과, 서브셸 없음). 맨 앞에서 찾은 것이 우선이다.
+_cl_plutil_path=""
+IFS=: read -r -a _cl_pa <<< "$PATH"
+for _cl_c in "${_cl_pa[@]}"; do
+  [ -n "$_cl_c" ] && [ -x "$_cl_c/plutil" ] && [ -f "$_cl_c/plutil" ] && { _cl_plutil_path="$_cl_c/plutil"; break; }
+done
+unset _cl_pa _cl_c
 
 # _cl_to_win <POSIX 경로> → REPLY: node.exe가 읽을 수 있는 Windows 경로(`/c/x`→`C:/x`, `/tmp/x`→ 실제 Temp 경로).
 _cl_to_win() {
@@ -58,13 +71,15 @@ cl_os() {
 
 # 설치 위치. Windows 형식(`C:\x`)으로 지정돼 있어도 POSIX 형식(`/c/x`)으로 돌려준다.
 # 이 경로는 settings.json의 hook 명령에 들어가는데, bash -c 가 역슬래시를 지워 버려(`C:Users…`) hook이 실행되지 않는다.
-cl_home() {
+cl_home() { cl_home_r; printf '%s\n' "$REPLY"; }
+# 결과를 REPLY에 둔다($(cl_home)은 서브셸을 하나 더 띄운다. 자주 부르는 경로 판정에서 쓴다).
+cl_home_r() {
   local h="${COWORK_LITE_HOME:-$HOME/.cowork-lite}"
   if cl_is_windows; then
     if [[ "$h" =~ ^([A-Za-z]):([\\/].*)?$ ]]; then h="/${BASH_REMATCH[1],,}${BASH_REMATCH[2]}"; fi
     h="${h//\\//}"
   fi
-  printf '%s\n' "$h"
+  REPLY="$h"
 }
 
 cl_say()  { printf '%s\n' "$*"; }
@@ -138,15 +153,17 @@ cl_lock_acquire() {
 }
 cl_lock_release() { rm -rf "$(cl_home)/.lock" 2>/dev/null; return 0; }
 
-cl_space_root() {
+cl_space_root() { cl_space_root_r; printf '%s\n' "$REPLY"; }
+# 결과를 REPLY에 둔다(서브셸을 띄우지 않는다).
+cl_space_root_r() {
   local v f c re
-  f="$(cl_home)/local.json"
+  cl_home_r; f="$REPLY/local.json"
   # 빠른 길: 이스케이프 없는 단순한 값이면 내장 기능만으로 읽는다(Node를 띄우면 0.2~0.5초가 든다).
   if [ -f "$f" ]; then
     IFS= read -r -d '' c < "$f"
     re='"space"[[:space:]]*:[[:space:]]*\{[^}]*"root"[[:space:]]*:[[:space:]]*"([^"\\]+)"'
-    if [[ "$c" =~ $re ]]; then printf '%s\n' "${BASH_REMATCH[1]}"; return; fi
+    if [[ "$c" =~ $re ]]; then REPLY="${BASH_REMATCH[1]}"; return; fi
   fi
-  v="$(cl_json_get "$f" space.root)" && [ -n "$v" ] && { printf '%s\n' "$v"; return; }
-  printf '%s\n' "$HOME/cowork-space"
+  v="$(cl_json_get "$f" space.root)" && [ -n "$v" ] && { REPLY="$v"; return; }
+  REPLY="$HOME/cowork-space"
 }

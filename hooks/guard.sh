@@ -2,7 +2,8 @@
 # cowork-lite PreToolUse hook: stdin의 도구 호출 JSON을 읽어 판정 JSON을 stdout으로 낸다.
 # fail-closed: 입력이 비었거나 깨졌거나, 도구를 모르거나, 내부 오류가 나면 막는다.
 # 종료 코드는 항상 0(판정은 stdout JSON으로만 전달한다).
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# dirname·cd·pwd 서브셸 대신 문자열 치환만 쓴다(Windows에서 프로세스 하나가 40ms 안팎). 상대 경로로 불려도 절대 경로가 된다.
+HERE="${BASH_SOURCE[0]%/*}"; [ "$HERE" = "${BASH_SOURCE[0]}" ] && HERE="."; [[ "$HERE" == /* || "$HERE" == [A-Za-z]:* ]] || HERE="$PWD/$HERE"
 LIBDIR="$HERE/../lib"
 FAIL_TEXT="문제가 생겨 안전을 위해 멈췄습니다. 도움이 필요하면 cowork-lite report 를 실행해 주세요."
 EMITTED=0

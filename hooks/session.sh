@@ -1,6 +1,7 @@
 #!/bin/bash
 # cowork-lite SessionStart hook: 세션 시작 시 stdout이 Claude의 규칙(맥락)으로 주입된다.
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# dirname·cd·pwd 서브셸 대신 문자열 치환만 쓴다(Windows에서 프로세스 하나가 40ms 안팎). 상대 경로로 불려도 절대 경로가 된다.
+HERE="${BASH_SOURCE[0]%/*}"; [ "$HERE" = "${BASH_SOURCE[0]}" ] && HERE="."; [[ "$HERE" == /* || "$HERE" == [A-Za-z]:* ]] || HERE="$PWD/$HERE"
 if ! source "$HERE/../lib/common.sh" 2>/dev/null; then
   echo "[cowork-lite] 설치 파일을 찾을 수 없습니다. 사용자에게 cowork-lite setup 을 다시 실행하도록 안내하세요."
   exit 0
