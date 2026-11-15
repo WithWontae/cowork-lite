@@ -142,7 +142,13 @@ _settings_apply_unregister() {
     for idx in $(_settings_ours_indexes "$f" "$ev" | sort -rn); do
       cl_json_edit "$f" -remove "hooks.$ev.$idx" || return 1
     done
+    # 우리 항목을 빼서 이벤트 배열이 비었으면 그 이벤트 키도 지운다(원래 없던 키가 빈 채로 남지 않게).
+    [ "$(plutil -extract "hooks.$ev" json -o - "$f" 2>/dev/null | tr -d '[:space:]')" = "[]" ] \
+      && { cl_json_edit "$f" -remove "hooks.$ev" || return 1; }
   done
+  [ "$(plutil -extract hooks json -o - "$f" 2>/dev/null | tr -d '[:space:]')" = "{}" ] \
+    && { cl_json_edit "$f" -remove hooks || return 1; }
+  return 0
 }
 
 settings_unregister_hooks() {
