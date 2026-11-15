@@ -128,8 +128,18 @@ _guard_split_segments() {
 
 # 따옴표를 풀어 한 줄에 토큰 하나로 나눈다. 실패하면 단순 공백 분리로 대체한다.
 _guard_tokenize() {
-  local seg="$1" t line
+  local seg="$1" t line wasf=1
   _GT=()
+  # 빠른 길: 따옴표·역슬래시가 없으면 xargs가 하는 일은 공백 분리뿐이므로 bash 내장으로 나눈다
+  # (xargs 파이프라인은 Windows에서 150ms 안팎). 와일드카드가 풀리지 않게 잠시 set -f 로 둔다.
+  case "$seg" in
+    *\'*|*\"*|*\\*) ;;
+    *)
+      [[ $- == *f* ]] || { wasf=0; set -f; }
+      read -r -a _GT <<< "$seg"
+      [ "$wasf" = 1 ] || set +f
+      return ;;
+  esac
   # -n1 을 쓰면 토큰마다 printf 프로세스가 따로 뜬다(Windows에서 느림). 한 번에 넘겨도 출력은 같다.
   t="$(printf '%s\n' "$seg" | xargs printf '%s\n' 2>/dev/null)" || t=""
   if [ -z "$t" ]; then t="$(set -f; printf '%s\n' $seg)"; fi
