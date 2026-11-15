@@ -161,7 +161,10 @@ _setup_run_inner() {
   _setup_step space _setup_space || return 1
   _setup_step hooks _setup_hooks || return 1
   _setup_step path _setup_path || return 1
-  doctor_run
+  doctor_run || return $?
+  # 안전장치(hook)는 Claude Code가 시작할 때 읽는다. 이미 열려 있던 창은 새 설정을 모르고, Windows에서 Git을 방금 설치했다면
+  # 열려 있던 앱이 Git 경로를 몰라 안전장치가 실행되지 않을 수 있다. 점검이 모두 통과한 뒤에 한 줄로 알린다.
+  cl_say "Claude Code가 이미 열려 있다면 완전히 종료한 뒤 다시 열어 주세요. 안전장치는 새로 연 창부터 적용됩니다."
 }
 
 setup_run() {
