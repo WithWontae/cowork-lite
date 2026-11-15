@@ -1,4 +1,4 @@
-﻿# cowork-lite Windows 설치기. PowerShell에 한 줄로 붙여넣어 실행한다.
+# cowork-lite Windows 설치기. PowerShell에 한 줄로 붙여넣어 실행한다.
 #   irm https://raw.githubusercontent.com/WithWontae/cowork-lite/main/install.ps1 | iex
 #
 # 하는 일: (1) Git Bash가 없으면 winget으로 Git을 설치하고 (2) install.sh를 Git Bash로 실행한다.
@@ -6,7 +6,9 @@
 # 환경변수(테스트·개발용): COWORK_LITE_SRC=<로컬 소스 폴더>, COWORK_LITE_YES=1, COWORK_LITE_NAME=<표시 이름>,
 #   COWORK_LITE_INSTALL_URL=<install.sh 주소>, COWORK_LITE_BASH=<Git Bash의 bash.exe 경로>
 #
-# 인코딩 주의: 이 파일은 BOM 포함 UTF-8로 저장한다. Windows PowerShell 5.1은 BOM이 없으면 한글을 깨뜨린다.
+# 인코딩 주의: 이 파일은 BOM 없는 UTF-8로 저장한다. irm | iex는 BOM을 글자(U+FEFF)로 남겨 첫 줄을 명령으로 읽고
+# '용어가 cmdlet… 인식되지 않습니다' 오류를 낸다(BOM 뒤에 줄바꿈을 붙여도 같다). irm은 UTF-8로 받으므로 한글이 정상이다.
+# 파일을 내려받아 -File로 직접 실행하는 방식은 지원하지 않는다(5.1이 BOM 없는 한글을 ANSI로 읽어 깨뜨린다).
 # iex로 실행될 때 `exit`를 쓰면 사용자의 PowerShell 창이 닫히므로, 함수 안에서는 값을 돌려주기만 한다.
 
 function Find-CoworkGitBash {

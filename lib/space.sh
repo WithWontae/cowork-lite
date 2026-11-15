@@ -32,7 +32,14 @@ _space_to_posix_r() {
 # Git Bash 안에서는 $TEMP도 `/tmp`로 보이므로 cygpath로 실제 위치를 한 번만 알아낸다(/tmp 경로가 나올 때만 불린다).
 _space_tmp_posix() {
   [ -n "${_SPACE_TMP:-}" ] && return
-  _space_to_posix_r "$(cygpath -m /tmp 2>/dev/null)"; _SPACE_TMP="${REPLY%/}"
+  local dev mnt rest
+  # /proc/mounts에 /tmp의 실제 위치가 있다(공백은 \040). 파일을 내장 read로 읽으므로 cygpath 프로세스(약 80ms)가 필요 없다.
+  if [ -r /proc/mounts ]; then
+    while read -r dev mnt rest; do
+      if [ "$mnt" = /tmp ]; then dev="${dev//\\040/ }"; _space_to_posix_r "$dev"; _SPACE_TMP="${REPLY%/}"; break; fi
+    done < /proc/mounts
+  fi
+  if [ -z "${_SPACE_TMP:-}" ]; then _space_to_posix_r "$(cygpath -m /tmp 2>/dev/null)"; _SPACE_TMP="${REPLY%/}"; fi
   [ -n "$_SPACE_TMP" ] || _SPACE_TMP=/tmp
 }
 _space_canon_r() {
@@ -49,10 +56,12 @@ _space_canon_r() {
   REPLY="$p"
 }
 
-_space_resolve() {
-  local p="$1" depth="${2:-0}" tail="" base target comp out d dn
+# $(_space_resolve ...)는 서브셸을 하나 더 띄운다. 자주 부르는 곳(guard)은 _space_resolve_r로 REPLY에 받는다.
+_space_resolve() { _space_resolve_r "$@"; printf '%s\n' "$REPLY"; }
+_space_resolve_r() {
+  local p="$1" depth="${2:-0}" tail="" base target comp out d dn sv
   local comps=() stack=() n=0 i
-  [ "$depth" -gt 20 ] && { printf '%s\n' "$p"; return 0; }
+  [ "$depth" -gt 20 ] && { REPLY="$p"; return 0; }
   if [ "$depth" -eq 0 ]; then _space_to_posix_r "$p"; p="$REPLY"; fi
   case "$p" in /*) ;; *) p="$PWD/$p" ;; esac
   while [ "$p" != "/" ] && [ "${p%/}" != "$p" ]; do p="${p%/}"; done   # 끝의 / 제거
@@ -62,13 +71,16 @@ _space_resolve() {
   if [ -L "$p" ]; then
     target="$(readlink "$p")"
     case "$target" in /*) ;; *) d="${p%/*}"; [ -n "$d" ] || d=/; target="${d%/}/$target" ;; esac
-    _space_resolve "${target}${tail:+/$tail}" $((depth+1)); return
+    _space_resolve_r "${target}${tail:+/$tail}" $((depth+1)); return
   fi
+  # `$(cd -P … && pwd -P)` 대신 이 셸에서 cd -P로 이동해 $PWD(물리 경로)를 읽고 돌아온다(서브셸 fork를 아낀다).
+  sv="$PWD"
   if [ -d "$p" ]; then
-    base="$(cd -P "$p" && pwd -P)"
+    if cd -P "$p" 2>/dev/null; then base="$PWD"; cd "$sv" 2>/dev/null; else base=""; fi
   else
     dn="${p%/*}"; [ -n "$dn" ] || dn=/
-    base="$(cd -P "$dn" && pwd -P)"; base="${base%/}/${p##*/}"
+    if cd -P "$dn" 2>/dev/null; then base="$PWD"; cd "$sv" 2>/dev/null; else base=""; fi
+    base="${base%/}/${p##*/}"
   fi
   if [ -n "$tail" ]; then
     IFS=/ read -r -a comps <<< "$tail"
@@ -88,7 +100,7 @@ _space_resolve() {
     if [ "$out" = "/" ]; then out="/${stack[$i]}"; else out="$out/${stack[$i]}"; fi
     i=$((i+1))
   done
-  printf '%s\n' "$out"
+  REPLY="$out"
 }
 
 # _space_rel_r <루트> <경로> : 경로가 루트 아래면 루트 이후 부분을 REPLY에 두고 0, 아니면 1. 루트 자신이면 REPLY가 비어 있다.
@@ -104,24 +116,26 @@ _space_rel_r() {
 }
 
 # space_classify <경로> → inbox|work|result|journal|internal|outside
-space_classify() {
+space_classify() { space_classify_r "$1"; printf '%s\n' "$REPLY"; }
+# 결과를 REPLY에 둔다($(space_classify …)는 서브셸을 하나 더 띄우므로 guard처럼 자주 부르는 곳에서 쓴다).
+space_classify_r() {
   local root rp rel top
-  root="$(_space_resolve "$(cl_space_root)")"
-  rp="$(_space_resolve "$1")"
-  _space_rel_r "$root" "$rp" || { echo outside; return; }
+  cl_space_root_r; _space_resolve_r "$REPLY"; root="$REPLY"
+  _space_resolve_r "$1"; rp="$REPLY"
+  _space_rel_r "$root" "$rp" || { REPLY=outside; return; }
   rel="$REPLY"
-  [ -n "$rel" ] || { echo work; return; }
+  [ -n "$rel" ] || { REPLY=work; return; }
   top="${rel%%/*}"
   # 자모 분리(NFD) 한글 이름으로 폴더 판정을 피하지 못하게 NFC로 맞춘다. NFD는 macOS 파일시스템 특성이라
   # Windows에서는 건너뛴다(iconv 프로세스를 띄우는 비용만 든다).
   cl_is_windows || top="$(printf '%s' "$top" | iconv -f UTF-8-MAC -t UTF-8 2>/dev/null || printf '%s' "$top")"
   case "$top" in
-    받은자료) echo inbox ;;
-    작업중) echo work ;;
-    결과물) echo result ;;
-    업무일지) echo journal ;;
-    .cowork|.cowork-lite) echo internal ;;
-    *) echo work ;;
+    받은자료) REPLY=inbox ;;
+    작업중) REPLY=work ;;
+    결과물) REPLY=result ;;
+    업무일지) REPLY=journal ;;
+    .cowork|.cowork-lite) REPLY=internal ;;
+    *) REPLY=work ;;
   esac
 }
 
