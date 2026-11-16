@@ -15,6 +15,14 @@
       "index_url": "https://nodejs.org/dist/index.json",
       "pkg_base": "https://nodejs.org/dist",
       "winget_id": "OpenJS.NodeJS.LTS"
+    },
+    "gh": {
+      "name": "GitHub CLI(gh)",
+      "min": "0.0.0",
+      "optional": true,
+      "official": "https://cli.github.com/",
+      "winget_id": "GitHub.cli",
+      "note": "PR 만들기 등 GitHub 작업에 쓴다. 필수가 아니라 실패해도 설치를 막지 않는다. Windows 는 winget 으로 설치한다(2026-11-16 실제 설치 확인). Mac 은 자동 설치하지 않고 안내만 한다(Homebrew 를 쓰지 않는 원칙). 로그인은 사용자가 gh auth login 으로 직접 한다."
     }
   },
   "packs": [
