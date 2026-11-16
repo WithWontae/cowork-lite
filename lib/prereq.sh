@@ -36,6 +36,7 @@ _prereq_version() {
   case "$1" in
     node)   v="$(node --version 2>/dev/null | head -1)" ;;
     claude) v="$(claude --version 2>/dev/null | head -1)" ;;
+    gh)     v="$(gh --version 2>/dev/null | head -1)" ;;
     *)      v="" ;;
   esac
   printf '%s\n' "$v" | sed -n 's/[^0-9]*\([0-9][0-9]*\.[0-9][0-9]*\(\.[0-9][0-9]*\)\{0,1\}\).*/\1/p' | head -1
@@ -132,6 +133,48 @@ prereq_install() {
 prereq_it_request_text() {
   local name official; name="$(_prereq_name "$1")"; official="$(_prereq_cfg "$1" official)"
   printf 'IT 담당자에게 이렇게 요청해 주세요:\n- 설치할 프로그램: %s\n- 공식 주소: %s\n- 개인 PC에 설치하려면 관리자 권한이 필요합니다.\n' "$name" "$official"
+}
+
+# 선택 도구 GitHub CLI(gh). 없어도, 설치에 실패해도 항상 0을 돌려줘 설치를 막지 않는다.
+# Windows 는 winget 으로 설치한다. Mac 은 자동 설치하지 않고 안내만 한다. 로그인은 사용자가 gh auth login 으로 직접 한다.
+# GitHub 로그인·git 연결. 로그인은 브라우저에서 사용자가 직접 한다(암호·토큰은 이 프로그램이 받거나 저장하지 않는다).
+# 이미 로그인돼 있으면 건너뛰고, 묻지 않는 실행(COWORK_LITE_YES)이거나 터미널이 없으면 안내만 한다. 항상 0.
+prereq_gh_login() {
+  local tty="${COWORK_LITE_TTY:-/dev/tty}"
+  command -v gh >/dev/null 2>&1 || return 0
+  if gh auth status >/dev/null 2>&1; then cl_say "✔ GitHub 에 이미 로그인되어 있습니다."; return 0; fi
+  if [ -n "$COWORK_LITE_YES" ] || ! type _space_confirm >/dev/null 2>&1 || [ ! -r "$tty" ] || ! _space_confirm "지금 GitHub 에 로그인할까요? (브라우저가 열립니다. 나중에 gh auth login 으로 해도 됩니다)"; then
+    cl_say "ℹ GitHub 로그인은 나중에 터미널에서 gh auth login 으로 할 수 있습니다."
+    return 0
+  fi
+  if gh auth login --hostname github.com --git-protocol https --web < "$tty" && gh auth setup-git; then
+    cl_say "✔ GitHub 로그인과 git 연결을 마쳤습니다."
+  else
+    cl_warn "⚠ GitHub 로그인을 마치지 못했습니다. 선택 사항이라 계속 진행합니다. 나중에 gh auth login 으로 다시 할 수 있습니다."
+  fi
+  return 0
+}
+
+prereq_gh_optional() {
+  local name; name="$(_prereq_name gh)"
+  prereq_refresh_path
+  if prereq_check gh; then cl_say "✔ $name 이(가) 이미 설치되어 있습니다."; prereq_gh_login; return 0; fi
+  if [ -z "$COWORK_LITE_RUNNER" ] && [ "$(cl_os)" != windows ]; then
+    cl_say "ℹ $name 은(는) 선택 사항이라 자동으로 설치하지 않습니다. 필요하면 $(_prereq_cfg gh official) 를 보고 설치해 주세요."
+    return 0
+  fi
+  if prereq_install gh; then
+    prereq_refresh_path
+    if prereq_check gh; then
+      cl_say "✔ $name 설치를 마쳤습니다."
+      prereq_gh_login
+    else
+      cl_say "ℹ $name 설치는 끝났지만 아직 이 창에서 보이지 않습니다. 터미널을 새로 열면 보입니다."
+    fi
+  else
+    cl_warn "⚠ $name 설치에 실패했습니다. 선택 사항이라 계속 진행합니다. 나중에 winget install --id $(_prereq_cfg gh winget_id) 로 설치할 수 있습니다."
+  fi
+  return 0
 }
 
 # 순서: Claude Code → Node.js. 이미 있으면 건너뛴다.

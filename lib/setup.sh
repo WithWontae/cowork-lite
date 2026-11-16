@@ -156,6 +156,7 @@ _setup_preview() {
 
 _setup_run_inner() {
   _setup_step prereq prereq_run_all || return 1
+  prereq_gh_optional
   _setup_step identity _setup_identity || return 1
   if ! _setup_done space || ! _setup_done hooks || ! _setup_done path || ! _setup_done packs; then
     _setup_preview || return 1

@@ -71,6 +71,10 @@ doctor_run() {
   if prereq_check node; then _doc_ok "Node.js가 설치되어 있습니다"
   else _doc_bad "Node.js가 없거나 버전이 낮습니다" "cowork-lite setup 을 다시 실행해 주세요"; fi
 
+  # GitHub CLI 는 선택 도구라 없어도 오류로 세지 않고 알리기만 한다.
+  if prereq_check gh; then _doc_ok "GitHub CLI(gh)가 설치되어 있습니다"
+  else cl_say "⚠ GitHub CLI(gh)가 없습니다. (선택 사항이라 오류로 세지 않습니다. Windows: winget install --id GitHub.cli)"; fi
+
   if cl_json_valid "$home/local.json"; then _doc_ok "설정 파일(local.json)이 정상입니다"
   else _doc_bad "설정 파일(local.json)이 없거나 손상되었습니다" "cowork-lite setup 을 다시 실행해 주세요"; fi
 
