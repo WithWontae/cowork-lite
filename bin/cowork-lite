@@ -2,7 +2,7 @@
 # cowork-lite 명령 분배기
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB="$HERE/../lib"
-for f in common manifest settings space guard prereq doctor setup; do
+for f in common manifest settings space guard prereq packs doctor setup; do
   if ! source "$LIB/$f.sh" 2>/dev/null; then
     echo "설치 파일이 손상되었습니다. 한 줄 설치 명령을 다시 붙여넣어 주세요."
     exit 1

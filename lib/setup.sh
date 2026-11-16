@@ -1,6 +1,6 @@
 #!/bin/bash
 # 설치(setup)·제거(uninstall) 흐름. 단계마다 완료 표식을 남겨 중간에 끊겨도 이어서 진행한다.
-# 단계: prereq → identity → (미리보기 확인) → space → hooks → path → doctor
+# 단계: prereq → identity → (미리보기 확인) → space → hooks → path → packs(기본 스킬) → doctor
 # 롤백: 설정 파일(hook)·PATH 블록·복사한 파일만 되돌린다. 작업 폴더의 사용자 파일은 절대 지우지 않는다.
 # 의존: common, manifest, settings, space, guard, prereq, doctor. bash 3.2 호환.
 
@@ -14,7 +14,7 @@ _setup_mark() { mkdir -p "$(_setup_state_dir)" && : > "$(_setup_state_dir)/$1.do
 _setup_label() {
   case "$1" in
     prereq) echo "선행 도구" ;; identity) echo "내 정보" ;; space) echo "작업 폴더" ;;
-    hooks) echo "안전장치 등록" ;; path) echo "명령 경로" ;; *) echo "$1" ;;
+    hooks) echo "안전장치 등록" ;; path) echo "명령 경로" ;; packs) echo "기본 스킬 설치" ;; *) echo "$1" ;;
   esac
 }
 
@@ -124,7 +124,8 @@ _setup_rollback() {
   cl_warn "설치를 끝내지 못해 바꾼 내용을 되돌립니다. (작업 폴더의 파일은 건드리지 않습니다)"
   settings_unregister_hooks >/dev/null 2>&1
   _setup_path_remove
-  rm -f "$(_setup_state_dir)/hooks.done" "$(_setup_state_dir)/path.done"
+  rm -f "$(_setup_state_dir)/hooks.done" "$(_setup_state_dir)/path.done" "$(_setup_state_dir)/packs.done"
+  # 이미 설치된 외부 프로그램(기본 스킬)은 되돌리지 않는다. 다시 실행하면 끝난 팩은 건너뛰고 이어서 진행한다.
   manifest_remove_all_of file
   _setup_files_remove
   cl_warn "한 줄 설치 명령을 다시 붙여넣으면 끝낸 단계는 건너뛰고 이어서 진행합니다."
@@ -146,6 +147,7 @@ _setup_preview() {
   cl_say "- Claude에 안전장치(hook) 2개를 등록합니다. 바뀌는 파일: $(settings_path) (바꾸기 전에 자동으로 백업합니다)"
   cl_say "- 터미널 설정 파일($(_setup_rcname))에 cowork-lite 명령 경로를 한 줄 추가합니다."
   cl_is_windows && cl_say "- 사용자 환경 변수 PATH에 cowork-lite 폴더를 추가합니다. (PowerShell·명령 프롬프트용, 제거하면 되돌립니다)"
+  cl_say "- 기본 스킬을 설치합니다. 외부에서 내려받아 설치하는 프로그램이 포함됩니다: $(packs_summary | paste -sd, - | sed 's/,/, /g')"
   cl_say "- 작업 폴더를 만듭니다: $(cl_space_root) (받은자료·작업중·결과물·업무일지)"
   cl_say "- 설치 위치: $(cl_home)"
   [ -n "$COWORK_LITE_YES" ] && return 0
@@ -155,12 +157,13 @@ _setup_preview() {
 _setup_run_inner() {
   _setup_step prereq prereq_run_all || return 1
   _setup_step identity _setup_identity || return 1
-  if ! _setup_done space || ! _setup_done hooks || ! _setup_done path; then
+  if ! _setup_done space || ! _setup_done hooks || ! _setup_done path || ! _setup_done packs; then
     _setup_preview || return 1
   fi
   _setup_step space _setup_space || return 1
   _setup_step hooks _setup_hooks || return 1
   _setup_step path _setup_path || return 1
+  _setup_step packs packs_install_all || return 1
   doctor_run || return $?
   # 안전장치(hook)는 Claude Code가 시작할 때 읽는다. 이미 열려 있던 창은 새 설정을 모르고, Windows에서 Git을 방금 설치했다면
   # 열려 있던 앱이 Git 경로를 몰라 안전장치가 실행되지 않을 수 있다. 점검이 모두 통과한 뒤에 한 줄로 알린다.

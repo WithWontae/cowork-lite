@@ -27,6 +27,38 @@ doctor_check_registered_hooks() {
   else _doc_bad "Claude에 등록된 안전장치 명령이 실행되지 않습니다(경로가 깨졌을 수 있습니다)" "cowork-lite setup 을 다시 실행해 주세요"; fi
 }
 
+# 기본팩 점검. 설치 표식이 없으면 ✘(고쳐야 할 항목). 설치된 팩은 packs.json 의 점검 명령을 실행해 본다.
+# 점검 명령이 아직 검증되지 않은 것(verified=false)은 실패해도 ✘ 로 세지 않고 ⚠ 로만 알린다(추정한 명령이 틀렸을 수 있어서).
+# 의존: packs.sh(_packs_load, _packs_exec), setup.sh(_setup_done)
+doctor_check_packs() {
+  local line kind id="" title="" done=0 ver ex out rc
+  local -a f argv
+  if ! _packs_load; then
+    _doc_bad "기본 스킬 목록(packs.json)을 읽지 못했습니다" "cowork-lite setup 을 다시 실행해 주세요"
+    return
+  fi
+  while IFS= read -r line; do
+    IFS=$'\t' read -r -a f <<< "$line"
+    case "${f[0]}" in
+      P)
+        id="${f[1]}"; title="${f[2]}"
+        if _setup_done "pack-$id"; then done=1; _doc_ok "기본 스킬 '$title' 이(가) 설치되어 있습니다"
+        else done=0; _doc_bad "기본 스킬 '$title' 이(가) 설치되어 있지 않습니다" "cowork-lite setup 을 다시 실행해 주세요"; fi ;;
+      V)
+        [ "$done" = 1 ] || continue
+        ver="${f[1]}"; ex="${f[2]}"; argv=("${f[@]:3}")
+        out="$(_packs_exec "${argv[@]}" 2>&1 </dev/null)"; rc=$?
+        if [ "$rc" -ne 0 ] || { [ "$ex" != "-" ] && [[ "$out" != *"$ex"* ]]; }; then
+          if [ "$ver" = 1 ]; then
+            _doc_bad "'$title' 점검 명령(${argv[0]})이 실패했습니다" "cowork-lite setup 을 다시 실행해 주세요"
+          else
+            cl_say "⚠ '$title' 점검 명령(${argv[0]})을 확인하지 못했습니다. (이 점검 명령은 아직 검증되지 않아 오류로 세지 않습니다)"
+          fi
+        fi ;;
+    esac
+  done <<< "$PACKS_LINES"
+}
+
 doctor_run() {
   local home root f d kind path probe res
   DOCTOR_FAILS=0
@@ -70,6 +102,8 @@ doctor_run() {
   res="$(guard_decide_file Edit "$probe")"
   if [ "${res%%$'\t'*}" = deny ]; then _doc_ok "Guard가 받은자료 수정을 막고 있습니다"
   else _doc_bad "Guard가 받은자료를 지키지 못하고 있습니다" "cowork-lite setup 을 다시 실행하거나 도움을 요청해 주세요"; fi
+
+  doctor_check_packs
 
   if [ "$DOCTOR_FAILS" -eq 0 ]; then
     cl_say "모두 초록불 ✔"; return 0
