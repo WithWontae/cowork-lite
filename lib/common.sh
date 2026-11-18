@@ -129,6 +129,22 @@ cl_json_edit() {
   fi
 }
 
+# 동기화되는 설정 파일 경로(작업 폴더 안 .cowork-lite/shared.json). 이 PC 에만 있는 값은 local.json 에 둔다(설계 §8b).
+#  shared: 표시 이름·언어·설치한 팩·Guard 정책(space.modify_policy)  /  local: space.root·device.name·sync.enabled
+cl_shared_file() { cl_space_root_r; printf '%s\n' "$REPLY/.cowork-lite/shared.json"; }
+
+# 동기화를 켰는지(local.json 의 sync.enabled=true). 켜지 않았거나 값이 없으면(로컬 전용 모드) 1.
+# 세션을 시작할 때마다 불리므로 빠른 길을 먼저 쓴다: 파일이 없거나 "sync" 가 아예 없으면 외부 프로그램(Node 등)을 띄우지 않고 바로 1.
+cl_sync_enabled() {
+  local f c re; cl_home_r; f="$REPLY/local.json"
+  [ -f "$f" ] || return 1
+  IFS= read -r -d '' c < "$f"
+  case "$c" in *'"sync"'*) ;; *) return 1 ;; esac
+  re='"sync"[[:space:]]*:[[:space:]]*\{[^}]*"enabled"[[:space:]]*:[[:space:]]*"true"'
+  if [[ "$c" =~ $re ]]; then return 0; fi
+  [ "$(cl_json_get "$f" sync.enabled 2>/dev/null)" = true ]
+}
+
 # bash 5의 printf 내장 시각 기능이 있으면 프로세스를 띄우지 않는다(macOS의 bash 3.2는 date 사용).
 cl_stamp() {
   if [ "${BASH_VERSINFO[0]:-0}" -ge 5 ]; then printf '%(%Y%m%d-%H%M%S)T\n' -1; else date '+%Y%m%d-%H%M%S'; fi

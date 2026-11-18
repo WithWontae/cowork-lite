@@ -13,7 +13,7 @@ _setup_mark() { mkdir -p "$(_setup_state_dir)" && : > "$(_setup_state_dir)/$1.do
 
 _setup_label() {
   case "$1" in
-    prereq) echo "선행 도구" ;; identity) echo "내 정보" ;; space) echo "작업 폴더" ;;
+    prereq) echo "선행 도구" ;; syncchoice) echo "동기화 선택" ;; identity) echo "내 정보" ;; space) echo "작업 폴더" ;;
     hooks) echo "안전장치 등록" ;; path) echo "명령 경로" ;; packs) echo "기본 스킬 설치" ;; *) echo "$1" ;;
   esac
 }
@@ -58,6 +58,43 @@ _setup_identity() {
   cl_json_set "$f" display.name "$name" || return 1
   cl_json_set "$f" language ko || return 1
   cl_say "표시 이름은 '$name', 언어는 한국어로 설정했습니다."
+}
+
+# 동기화되는 설정(shared.json)에 모을 값을 옮겨 적는다. 여러 번 실행해도 같은 결과다.
+# - 표시 이름·언어: 설치 초기에는 작업 폴더가 없어 local.json 에 적어 두므로, 여기서 shared.json 으로 옮기고 local 쪽은 지운다.
+#   shared.json 에 이미 값이 있으면(다른 노트북에서 받아온 값) 덮어쓰지 않는다.
+# - 설치한 팩: 끝난 팩 표식(state/pack-<id>.done)을 모아 packs.installed 에 쉼표로 적는다.
+_setup_shared_write() {
+  local lf sf k v f id ids=""; lf="$(cl_home)/local.json"; sf="$(cl_shared_file)"
+  for k in display.name language; do
+    if v="$(cl_json_get "$lf" "$k")" && [ -n "$v" ]; then
+      cl_json_get "$sf" "$k" >/dev/null || cl_json_set "$sf" "$k" "$v" || return 1
+      cl_json_edit "$lf" -remove "$k" || return 1
+    fi
+  done
+  for f in "$(_setup_state_dir)"/pack-*.done; do
+    [ -e "$f" ] || continue
+    id="${f##*/pack-}"; id="${id%.done}"; ids="${ids:+$ids,}$id"
+  done
+  [ -z "$ids" ] || cl_json_set "$sf" packs.installed "$ids" || return 1
+  return 0
+}
+
+# 업무 파일을 내 GitHub(비공개)에 동기화할지 묻는다. 건너뛰면 이 노트북에서만 쓰는 로컬 전용 모드(설계 §8b).
+# 묻지 않는 실행(COWORK_LITE_YES)의 기본값은 건너뛰기다. COWORK_LITE_SYNC=yes|no 로 미리 정할 수 있다.
+_setup_sync_choice() {
+  local ans f enabled=false; f="$(cl_home)/local.json"
+  case "${COWORK_LITE_SYNC:-}" in
+    yes|예) ans=예 ;;
+    no|아니오|건너뛰기) ans=건너뛰기 ;;
+    *)
+      cl_say "업무 파일을 내 GitHub 계정의 비공개 저장소에 보관하고, 다른 노트북과 맞출 수 있습니다."
+      cl_say "업무 파일이 GitHub 로 올라갑니다. 2단계 인증을 켜 두기를 권합니다. 건너뛰면 이 노트북에서만 쓰고, 나중에 켤 수 있습니다."
+      ans="$(_setup_ask "GitHub 에 동기화할까요? [예 / 건너뛰기]" 건너뛰기)" ;;
+  esac
+  case "$ans" in 예|y|Y|yes|YES) enabled=true ;; esac
+  cl_json_set "$f" sync.enabled "$enabled" || return 1
+  if [ "$enabled" = true ]; then cl_say "GitHub 동기화를 사용합니다."; else cl_say "이 노트북에서만 사용합니다. (동기화는 나중에 켤 수 있습니다)"; fi
 }
 
 _setup_space() {
@@ -156,7 +193,22 @@ _setup_preview() {
 
 _setup_run_inner() {
   _setup_step prereq prereq_run_all || return 1
-  prereq_gh_optional
+  _setup_step syncchoice _setup_sync_choice || return 1
+  # Git·gh 는 동기화를 고른 경우에만 확인한다. 로컬 전용 모드에서는 건드리지 않는다.
+  if cl_sync_enabled; then
+    prereq_git_optional; prereq_gh_optional
+    if sync_connect; then
+      sync_register_hook || cl_warn "자동 동기화 설정은 나중에 cowork-lite sync setup 으로 다시 할 수 있습니다. 설치는 계속합니다."
+    else
+      # 처음 연결하는 경우에는, 연결 없이 켜진 채로 두면 doctor 가 실패하고 세션을 시작할 때마다 실패 안내가 나오므로 다시 끈다.
+      # 전에 연결한 적이 있으면(일시적인 문제일 수 있으므로) 그대로 둔다.
+      if _sync_turn_off_unless_connected_before; then
+        cl_warn "동기화는 켜지 않은 채로 설치를 마칩니다(이 노트북에서만 사용). 준비되면 cowork-lite sync setup 으로 켤 수 있습니다."
+      else
+        cl_warn "동기화 연결을 확인하지 못했습니다. 이전 설정은 그대로 두었습니다. 설치는 계속합니다."
+      fi
+    fi
+  fi
   _setup_step identity _setup_identity || return 1
   if ! _setup_done space || ! _setup_done hooks || ! _setup_done path || ! _setup_done packs; then
     _setup_preview || return 1
@@ -165,6 +217,7 @@ _setup_run_inner() {
   _setup_step hooks _setup_hooks || return 1
   _setup_step path _setup_path || return 1
   _setup_step packs packs_install_all || return 1
+  _setup_shared_write || { cl_warn "✘ 공유 설정(shared.json)을 기록하지 못했습니다."; return 1; }
   doctor_run || return $?
   # 안전장치(hook)는 Claude Code가 시작할 때 읽는다. 이미 열려 있던 창은 새 설정을 모르고, Windows에서 Git을 방금 설치했다면
   # 열려 있던 앱이 Git 경로를 몰라 안전장치가 실행되지 않을 수 있다. 점검이 모두 통과한 뒤에 한 줄로 알린다.

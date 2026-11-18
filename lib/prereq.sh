@@ -37,6 +37,7 @@ _prereq_version() {
     node)   v="$(node --version 2>/dev/null | head -1)" ;;
     claude) v="$(claude --version 2>/dev/null | head -1)" ;;
     gh)     v="$(gh --version 2>/dev/null | head -1)" ;;
+    git)    v="$(git --version 2>/dev/null | head -1)" ;;
     *)      v="" ;;
   esac
   printf '%s\n' "$v" | sed -n 's/[^0-9]*\([0-9][0-9]*\.[0-9][0-9]*\(\.[0-9][0-9]*\)\{0,1\}\).*/\1/p' | head -1
@@ -135,8 +136,6 @@ prereq_it_request_text() {
   printf 'IT 담당자에게 이렇게 요청해 주세요:\n- 설치할 프로그램: %s\n- 공식 주소: %s\n- 개인 PC에 설치하려면 관리자 권한이 필요합니다.\n' "$name" "$official"
 }
 
-# 선택 도구 GitHub CLI(gh). 없어도, 설치에 실패해도 항상 0을 돌려줘 설치를 막지 않는다.
-# Windows 는 winget 으로 설치한다. Mac 은 자동 설치하지 않고 안내만 한다. 로그인은 사용자가 gh auth login 으로 직접 한다.
 # GitHub 로그인·git 연결. 로그인은 브라우저에서 사용자가 직접 한다(암호·토큰은 이 프로그램이 받거나 저장하지 않는다).
 # 이미 로그인돼 있으면 건너뛰고, 묻지 않는 실행(COWORK_LITE_YES)이거나 터미널이 없으면 안내만 한다. 항상 0.
 prereq_gh_login() {
@@ -155,27 +154,30 @@ prereq_gh_login() {
   return 0
 }
 
-prereq_gh_optional() {
-  local name; name="$(_prereq_name gh)"
+# 선택 도구(git, gh) 하나를 점검·설치한다. 설치를 막지 않는 용도라 실패해도 안내만 한다.
+# 있거나 방금 설치돼 이 창에서 보이면 0, 아니면 1. Windows 는 winget 으로 설치하고, Mac 은 자동 설치하지 않고 안내만 한다.
+_prereq_optional() {
+  local tool="$1" name hint; name="$(_prereq_name "$tool")"
   prereq_refresh_path
-  if prereq_check gh; then cl_say "✔ $name 이(가) 이미 설치되어 있습니다."; prereq_gh_login; return 0; fi
+  if prereq_check "$tool"; then cl_say "✔ $name 이(가) 이미 설치되어 있습니다."; return 0; fi
   if [ -z "$COWORK_LITE_RUNNER" ] && [ "$(cl_os)" != windows ]; then
-    cl_say "ℹ $name 은(는) 선택 사항이라 자동으로 설치하지 않습니다. 필요하면 $(_prereq_cfg gh official) 를 보고 설치해 주세요."
-    return 0
+    hint="$(_prereq_cfg "$tool" mac_hint)"
+    cl_say "ℹ $name 은(는) 자동으로 설치하지 않습니다. $(_prereq_cfg "$tool" official) 를 보고 설치해 주세요.${hint:+ $hint}"
+    return 1
   fi
-  if prereq_install gh; then
+  if prereq_install "$tool"; then
     prereq_refresh_path
-    if prereq_check gh; then
-      cl_say "✔ $name 설치를 마쳤습니다."
-      prereq_gh_login
-    else
-      cl_say "ℹ $name 설치는 끝났지만 아직 이 창에서 보이지 않습니다. 터미널을 새로 열면 보입니다."
-    fi
-  else
-    cl_warn "⚠ $name 설치에 실패했습니다. 선택 사항이라 계속 진행합니다. 나중에 winget install --id $(_prereq_cfg gh winget_id) 로 설치할 수 있습니다."
+    if prereq_check "$tool"; then cl_say "✔ $name 설치를 마쳤습니다."; return 0; fi
+    cl_say "ℹ $name 설치는 끝났지만 아직 이 창에서 보이지 않습니다. 터미널을 새로 열면 보입니다."
+    return 1
   fi
-  return 0
+  cl_warn "⚠ $name 설치에 실패했습니다. 선택 사항이라 계속 진행합니다. 나중에 winget install --id $(_prereq_cfg "$tool" winget_id) 로 설치할 수 있습니다."
+  return 1
 }
+
+# 동기화를 고른 경우에 쓰는 선택 도구. 둘 다 항상 0을 돌려줘 설치를 막지 않는다.
+prereq_git_optional() { _prereq_optional git; return 0; }
+prereq_gh_optional() { _prereq_optional gh && prereq_gh_login; return 0; }
 
 # 순서: Claude Code → Node.js. 이미 있으면 건너뛴다.
 prereq_run_all() {

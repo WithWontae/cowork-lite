@@ -175,6 +175,41 @@ _guard_space_rm() {
   _guard_out ask "$label 폴더의 파일 ${total}개를 지우려고 합니다. 계속할까요?"
 }
 
+# git 명령 하나의 판정을 _GUARD_R 에 둔다. git 이 일할 폴더(-C·--git-dir·--work-tree, 없으면 지금 폴더)가
+# 작업 폴더 안이면 deny. 앞 세그먼트의 cd 가 있으면 그 폴더(_GUARD_CDDIR)에서 시작한다.
+_guard_git() {
+  local dir="${_GUARD_CDDIR:-$PWD}" a v want cls p rp
+  local -a G=("$@")
+  local i=0 n=${#G[@]} targets=()
+  while [ "$i" -lt "$n" ]; do
+    a="${G[$i]}"; v=""
+    case "$a" in
+      -C) v="${G[$((i+1))]:-}"; i=$((i+1)); dir="$(_guard_git_join "$dir" "$v")"; targets[${#targets[@]}]="$dir"; i=$((i+1)); continue ;;
+      -c|--exec-path|--namespace) i=$((i+2)); continue ;;
+      --git-dir=*|--work-tree=*) targets[${#targets[@]}]="$(_guard_git_join "$dir" "${a#*=}")" ;;
+      --git-dir|--work-tree) targets[${#targets[@]}]="$(_guard_git_join "$dir" "${G[$((i+1))]:-}")"; i=$((i+1)) ;;
+      -*) ;;
+      *) break ;;
+    esac
+    i=$((i+1))
+  done
+  targets[${#targets[@]}]="$dir"
+  for p in "${targets[@]}"; do
+    case "$p" in *'$'*|*'`'*) _GUARD_R="$(_guard_out ask "git 이 일할 폴더를 정확히 알 수 없습니다. 계속할까요?")"; return ;; esac
+    space_classify_r "$p"; cls="$REPLY"
+    if [ "$cls" != outside ]; then
+      _GUARD_R="$(_guard_out deny "작업 폴더에서는 git 을 직접 쓰지 않습니다. 다른 노트북과 맞출 때는 cowork-lite sync 를 써 주세요.")"; return
+    fi
+  done
+  _GUARD_R="$(_guard_out allow "")"
+}
+
+# <기준 폴더> <경로> → 절대 경로(~ 는 HOME 으로). 기준이 상대 경로면 그대로 이어 붙인다.
+_guard_git_join() {
+  local base="$1" p; p="$(_guard_expand_path "$2")"
+  case "$p" in /*|[A-Za-z]:*) printf '%s\n' "$p" ;; "") printf '%s\n' "$base" ;; *) printf '%s/%s\n' "$base" "$p" ;; esac
+}
+
 _guard_segment() {
   local seg="$1" depth="$2" n i idx base0 tok b r best="" last="" sedi=0 skipped=0 t j
   local -a T nonopt
@@ -204,6 +239,12 @@ _guard_segment() {
   if [ "$base0" = cowork-lite ] && [ "${T[$((idx+1))]:-}" = space ] && [ "${T[$((idx+2))]:-}" = rm ]; then
     _guard_space_rm "${T[@]:$((idx+3))}"
     return
+  fi
+
+  # git 직접 호출: 작업 폴더 안의 저장소는 cowork-lite sync 로만 맞춘다(설계 §8b). 밖의 저장소는 건드리지 않는다.
+  if [ "$base0" = git ]; then
+    _guard_git "${T[@]:$((idx+1))}"
+    case "${_GUARD_R%%$'\t'*}" in deny|ask) printf '%s\n' "$_GUARD_R"; return ;; esac
   fi
 
   # A. 삭제 명령
@@ -325,11 +366,27 @@ _guard_segment() {
   if [ -n "$best" ]; then printf '%s\n' "$best"; else _guard_out allow ""; fi
 }
 
+# cd·pushd 세그먼트의 대상 폴더를 _GUARD_CDDIR 에 기록한다(뒤의 git 이 어느 폴더에서 일하는지 알기 위해). 모르면 비운다.
+_guard_note_cd() {
+  local -a t; local j n d
+  _guard_tokenize "$1"; t=("${_GT[@]}"); n=${#t[@]}
+  for ((j=0; j<n; j++)); do
+    case "${t[$j]}" in
+      cd|pushd)
+        d=""
+        for ((j=j+1; j<n; j++)); do case "${t[$j]}" in -*) ;; *) d="${t[$j]}"; break ;; esac; done
+        [ -n "$d" ] || d="$HOME"
+        _GUARD_CDDIR="$(_guard_git_join "${_GUARD_CDDIR:-$PWD}" "$d")"; return ;;
+    esac
+  done
+  _GUARD_CDDIR=""
+}
+
 # guard_decide_bash <command> [depth]
 guard_decide_bash() {
   # _GUARD_CTX: 쓰기 대상 판정에 Bash 문맥임을 알린다. _GUARD_CD: 앞 세그먼트에 cd가 있었는지
   # (그 뒤의 상대 경로는 정확한 위치를 알 수 없다). 둘 다 동적 범위로 하위 함수가 읽는다.
-  local cmd="$1" depth="${2:-0}" segs seg r best="" _GUARD_CTX=bash _GUARD_CD="${_GUARD_CD:-0}"
+  local cmd="$1" depth="${2:-0}" segs seg r best="" _GUARD_CTX=bash _GUARD_CD="${_GUARD_CD:-0}" _GUARD_CDDIR="${_GUARD_CDDIR:-}"
   local cd_re='(^|[[:space:]])(cd|pushd)([[:space:]]|$)'
   [ -n "$cmd" ] || { _guard_out allow ""; return; }
   segs="$(_guard_split_segments "$cmd")"
@@ -338,7 +395,7 @@ guard_decide_bash() {
     [ -n "${seg//[ $'\t']/}" ] || continue
     r="$(_guard_segment "$seg" "$depth")"
     _guard_consider "$r" || return
-    if [[ "$seg" =~ $cd_re ]]; then _GUARD_CD=1; fi
+    if [[ "$seg" =~ $cd_re ]]; then _GUARD_CD=1; _guard_note_cd "$seg"; fi
   done <<< "$segs"
   if [ -n "$best" ]; then printf '%s\n' "$best"; else _guard_out allow ""; fi
 }

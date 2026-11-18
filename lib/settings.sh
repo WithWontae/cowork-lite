@@ -6,6 +6,10 @@
 SETTINGS_MARKER="cowork-lite"
 SETTINGS_GUARD_MATCHER="Read|Write|Edit|MultiEdit|Bash|NotebookEdit"
 SETTINGS_EVENTS="SessionStart PreToolUse"
+# 동기화용 hook(SessionEnd)은 동기화를 켠 경우에만 등록한다. 다른 도구의 SessionEnd hook 과 섞이지 않게 파일 이름으로만 알아본다.
+# (경로에 cowork-lite 가 들어 있는 다른 hook 이 이미 있을 수 있어서 SETTINGS_MARKER 로는 구분할 수 없다.)
+SETTINGS_SYNC_EVENT="SessionEnd"
+SETTINGS_SYNC_MARKER="session-end.sh"
 
 settings_path() { printf '%s\n' "${CLAUDE_SETTINGS_PATH:-$HOME/.claude/settings.json}"; }
 
@@ -69,9 +73,9 @@ _settings_transaction() {
   _settings_lock_release
 }
 
-# 이벤트 배열에서 우리 항목의 인덱스를 한 줄씩 출력
+# 이벤트 배열에서 우리 항목의 인덱스를 한 줄씩 출력. 세 번째 인자는 command 에 들어 있어야 하는 문자열(기본: cowork-lite).
 _settings_ours_indexes() {
-  local f="$1" ev="$2" n m i j c
+  local f="$1" ev="$2" want="${3:-$SETTINGS_MARKER}" n m i j c
   n="$(plutil -extract "hooks.$ev" raw -o - "$f" 2>/dev/null)" || return 0
   i=0
   while [ "$i" -lt "$n" ]; do
@@ -79,7 +83,7 @@ _settings_ours_indexes() {
     j=0
     while [ "$j" -lt "$m" ]; do
       c="$(plutil -extract "hooks.$ev.$i.hooks.$j.command" raw -o - "$f" 2>/dev/null)"
-      case "$c" in *"$SETTINGS_MARKER"*) echo "$i"; break ;; esac
+      case "$c" in *"$want"*) echo "$i"; break ;; esac
       j=$((j+1))
     done
     i=$((i+1))
@@ -146,6 +150,7 @@ _settings_apply_unregister() {
     [ "$(plutil -extract "hooks.$ev" json -o - "$f" 2>/dev/null | tr -d '[:space:]')" = "[]" ] \
       && { cl_json_edit "$f" -remove "hooks.$ev" || return 1; }
   done
+  _settings_apply_unregister_sync "$f" || return 1
   [ "$(plutil -extract hooks json -o - "$f" 2>/dev/null | tr -d '[:space:]')" = "{}" ] \
     && { cl_json_edit "$f" -remove hooks || return 1; }
   return 0
@@ -155,4 +160,64 @@ settings_unregister_hooks() {
   local f; f="$(settings_path)"
   [ -s "$f" ] || return 0
   _settings_transaction _settings_apply_unregister
+}
+
+# ---- 동기화용 SessionEnd hook (P0b Task 7) ----------------------------------------------------
+
+settings_has_sync_hook() {
+  local f; f="$(settings_path)"
+  [ -s "$f" ] || return 1
+  [ -n "$(_settings_ours_indexes "$f" "$SETTINGS_SYNC_EVENT" "$SETTINGS_SYNC_MARKER")" ]
+}
+
+_settings_apply_register_sync() {
+  local f="$1" cmd="$2" ev="$SETTINGS_SYNC_EVENT" item
+  plutil -extract hooks json -o - "$f" >/dev/null 2>&1 \
+    || cl_json_edit "$f" -insert hooks -json '{}' || return 1
+  plutil -extract "hooks.$ev" json -o - "$f" >/dev/null 2>&1 \
+    || cl_json_edit "$f" -insert "hooks.$ev" -json '[]' || return 1
+  item="{\"hooks\":[{\"type\":\"command\",\"command\":\"$(_settings_json_escape "$cmd")\"}]}"
+  cl_json_edit "$f" -insert "hooks.$ev" -json "$item" -append
+}
+
+# settings_register_sync_hook <session_end_cmd> : 멱등. 이미 등록돼 있으면 아무것도 바꾸지 않는다.
+settings_register_sync_hook() {
+  settings_has_sync_hook && return 0
+  _settings_transaction _settings_apply_register_sync "$1"
+}
+
+# 우리 SessionEnd 항목만 지우고, 비어 버린 키는 정리한다. 다른 SessionEnd hook 은 건드리지 않는다.
+_settings_apply_unregister_sync() {
+  local f="$1" ev="$SETTINGS_SYNC_EVENT" idx
+  for idx in $(_settings_ours_indexes "$f" "$ev" "$SETTINGS_SYNC_MARKER" | sort -rn); do
+    cl_json_edit "$f" -remove "hooks.$ev.$idx" || return 1
+  done
+  [ "$(plutil -extract "hooks.$ev" json -o - "$f" 2>/dev/null | tr -d '[:space:]')" = "[]" ] \
+    && { cl_json_edit "$f" -remove "hooks.$ev" || return 1; }
+  return 0
+}
+
+settings_unregister_sync_hook() {
+  local f; f="$(settings_path)"
+  [ -s "$f" ] || return 0
+  _settings_transaction _settings_apply_unregister_sync
+}
+
+# settings_sync_command : 등록된 동기화 SessionEnd hook 의 command 문자열을 출력한다. 없으면 1. doctor 가 파일이 있는지 볼 때 쓴다.
+settings_sync_command() {
+  local f ev="$SETTINGS_SYNC_EVENT" n m i j c; f="$(settings_path)"
+  [ -s "$f" ] || return 1
+  n="$(plutil -extract "hooks.$ev" raw -o - "$f" 2>/dev/null)" || return 1
+  i=0
+  while [ "$i" -lt "$n" ]; do
+    m="$(plutil -extract "hooks.$ev.$i.hooks" raw -o - "$f" 2>/dev/null)" || m=0
+    j=0
+    while [ "$j" -lt "$m" ]; do
+      c="$(plutil -extract "hooks.$ev.$i.hooks.$j.command" raw -o - "$f" 2>/dev/null)"
+      case "$c" in *"$SETTINGS_SYNC_MARKER"*) printf '%s\n' "$c"; return 0 ;; esac
+      j=$((j+1))
+    done
+    i=$((i+1))
+  done
+  return 1
 }
