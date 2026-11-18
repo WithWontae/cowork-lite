@@ -53,9 +53,35 @@ _prereq_ver_ge() {
   [ "$a3" -ge "$b3" ]
 }
 
+# 실제로 쓸 수 있는 Python(min 이상)을 찾아 실행 파일 경로를 출력한다. 없으면 1.
+# Windows 의 python 은 앱 스토어로 연결되는 빈 껍데기일 수 있어 이름만 보지 않고 실제로 실행해 버전을 읽는다.
+# 찾으면 PREREQ_PYTHON_EXE 에 기억한다(방금 설치해 PATH 에 아직 없거나, 빈 껍데기가 PATH 앞에 있어도 진짜를 쓰기 위해).
+prereq_python_find() {
+  local min c out exe ver d
+  min="$(_prereq_cfg python min)" || min="3.10.0"
+  if [ -n "${PREREQ_PYTHON_EXE:-}" ] && [ -x "$PREREQ_PYTHON_EXE" ]; then printf '%s\n' "$PREREQ_PYTHON_EXE"; return 0; fi
+  local -a cands=("python3" "python" "py -3")
+  if [ "$(cl_os)" = windows ] && [ -n "${LOCALAPPDATA:-}" ] && command -v cygpath >/dev/null 2>&1; then
+    d="$(cygpath -u "$LOCALAPPDATA" 2>/dev/null)/Programs/Python"
+    for c in "$d"/Python3*/python.exe; do [ -x "$c" ] && cands+=("$c"); done
+  fi
+  for c in "${cands[@]}"; do
+    out="$($c -c 'import sys;print(sys.executable);print("%d.%d.%d"%sys.version_info[:3])' 2>/dev/null | tr -d '\r')" || continue
+    exe="$(printf '%s\n' "$out" | sed -n 1p)"; ver="$(printf '%s\n' "$out" | sed -n 2p)"
+    [ -n "$exe" ] && [ -n "$ver" ] || continue
+    [ "$(cl_os)" = windows ] && command -v cygpath >/dev/null 2>&1 && exe="$(cygpath -u "$exe" 2>/dev/null)"
+    [ -x "$exe" ] || continue
+    _prereq_ver_ge "$ver" "$min" || continue
+    export PREREQ_PYTHON_EXE="$exe"
+    printf '%s\n' "$exe"; return 0
+  done
+  return 1
+}
+
 # prereq_check <claude|node> : 0 정상 / 1 없음 / 2 버전 부족
 prereq_check() {
   local tool="$1" ver min
+  if [ "$tool" = python ]; then prereq_python_find >/dev/null; return $?; fi
   command -v "$tool" >/dev/null 2>&1 || return 1
   min="$(_prereq_cfg "$tool" min)" || min="0.0.0"
   ver="$(_prereq_version "$tool")"
@@ -178,6 +204,8 @@ _prereq_optional() {
 # 동기화를 고른 경우에 쓰는 선택 도구. 둘 다 항상 0을 돌려줘 설치를 막지 않는다.
 prereq_git_optional() { _prereq_optional git; return 0; }
 prereq_gh_optional() { _prereq_optional gh && prereq_gh_login; return 0; }
+# MarkItDown(MS 문서 변환)에 필요한 Python. 없으면 Windows 는 winget 으로 설치하고 Mac 은 안내만 한다. 실패해도 설치를 막지 않는다.
+prereq_python_optional() { _prereq_optional python; return 0; }
 
 # 순서: Claude Code → Node.js. 이미 있으면 건너뛴다.
 prereq_run_all() {

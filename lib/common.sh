@@ -121,7 +121,8 @@ cl_json_set() {
 # 임시 파일로 출력한 뒤 교체한다(이 macOS의 plutil 동작, 2026-11-14 확인).
 cl_json_edit() {
   local file="$1" tmp; shift
-  tmp="$(mktemp "${file}.XXXXXX")" || return 1
+  # 임시 파일 이름에 .cltmp. 를 넣는다: 작업 폴더 안의 설정 파일을 쓰는 도중에 동기화가 돌아도 임시 파일이 올라가지 않게(sync 가 이 이름을 제외한다).
+  tmp="$(mktemp "${file}.cltmp.XXXXXX")" || return 1
   if plutil "$@" -o "$tmp" "$file" && cl_json_valid "$tmp"; then
     mv "$tmp" "$file"
   else

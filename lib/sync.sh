@@ -16,6 +16,7 @@ _sync_ignore_lines() {
 .cowork/backup/
 .cowork/trash/
 .cowork/log.jsonl
+*.cltmp.*
 *.pem
 *.key
 *.p12
@@ -424,7 +425,8 @@ sync_run() {
 
   # 2) 내 변경 저장(합치기 전에 먼저 기록해 두면 어떤 경우에도 내 내용이 남는다)
   # 크기 제한을 넘는 파일은 저장 대상에서 뺀다(내용을 읽기 전에 경로로 제외하므로 큰 파일을 다루느라 오래 걸리지 않는다).
-  local -a addargs; addargs=(add -A -- .)
+  # 설정 파일을 쓰는 도중의 임시 파일(*.cltmp.*)도 뺀다. 예전에 만든 .gitignore 블록에는 이 줄이 없어서 경로로도 제외한다.
+  local -a addargs; addargs=(add -A -- . ':(exclude,glob)**/*.cltmp.*')
   large="$(sync_large_files)"
   if [ -n "$large" ]; then
     while IFS= read -r f; do addargs+=(":(exclude,literal)$f"); done <<< "$large"
