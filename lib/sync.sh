@@ -48,11 +48,45 @@ sync_repo_visibility() {
   fi
 }
 
+# GitHub 저장소 이름으로 쓸 수 있는지(영문·숫자·. _ - 만, 1~100자, 점으로만 이루어진 이름 제외).
+_sync_valid_repo_name() {
+  case "$1" in ""|.|..) return 1 ;; esac
+  [ "${#1}" -le 100 ] || return 1
+  case "$1" in *[!A-Za-z0-9._-]*) return 1 ;; esac
+  return 0
+}
+
+# 저장소 이름을 화면에서 묻는다. 묻지 않는 실행(COWORK_LITE_YES)이나 답을 읽을 수 없는 경우에는 기본 이름을 쓴다.
+# 잘못된 이름을 입력하면 다시 묻고, 3번 틀리면 기본 이름으로 간다.
+_sync_ask_repo_name() {
+  local ans i
+  if ! type _setup_ask >/dev/null 2>&1; then printf '%s\n' "$SYNC_REPO_DEFAULT"; return 0; fi
+  [ -z "$COWORK_LITE_YES" ] && cl_say "업무 파일을 보관할 비공개 저장소의 이름을 정합니다. 이미 있는 비공개 저장소 이름을 쓰면 그곳에 연결합니다." >&2
+  for i in 1 2 3; do
+    ans="$(_setup_ask "저장소 이름" "$SYNC_REPO_DEFAULT")"
+    if _sync_valid_repo_name "$ans"; then printf '%s\n' "$ans"; return 0; fi
+    cl_warn "이름에는 영문·숫자·점(.)·밑줄(_)·하이픈(-)만 쓸 수 있습니다. 다시 입력해 주세요." >&2
+  done
+  printf '%s\n' "$SYNC_REPO_DEFAULT"
+}
+
 # sync_connect [저장소 이름] : GitHub 의 비공개 저장소를 만들거나 찾아 작업 폴더에 연결한다. 연결하면 0, 못 하면 1.
 # 기본 이름은 cowork-workspace(COWORK_LITE_SYNC_REPO 로 바꿀 수 있다).
 sync_connect() {
-  local name="${1:-${COWORK_LITE_SYNC_REPO:-$SYNC_REPO_DEFAULT}}" root owner uid vis remote cur lf mode
+  local name="${1:-${COWORK_LITE_SYNC_REPO:-}}" root owner uid vis remote cur lf mode prev
   lf="$(cl_home)/local.json"; root="$(cl_space_root)"
+  if [ -z "$name" ]; then
+    prev="$(cl_json_get "$lf" sync.repo 2>/dev/null)"
+    if [ -n "$prev" ]; then
+      name="${prev#*/}"   # 전에 연결한 저장소가 있으면 같은 이름을 쓰고 다시 묻지 않는다.
+    else
+      name="$(_sync_ask_repo_name)" || return 1
+    fi
+  fi
+  if ! _sync_valid_repo_name "$name"; then
+    cl_warn "✘ 저장소 이름이 올바르지 않습니다: $name (영문·숫자·점(.)·밑줄(_)·하이픈(-)만, 100자까지)"
+    return 1
+  fi
   if ! command -v git >/dev/null 2>&1 || ! command -v gh >/dev/null 2>&1; then
     cl_warn "⚠ 동기화에는 Git 과 GitHub CLI(gh)가 필요합니다. 설치한 뒤 cowork-lite sync setup 을 다시 실행해 주세요."
     return 1
