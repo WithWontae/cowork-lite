@@ -80,6 +80,43 @@ _setup_shared_write() {
   return 0
 }
 
+# 작업 폴더 이름으로 쓸 수 있는지. 홈 폴더 바로 아래에 만들므로 경로 구분자·Windows 에서 못 쓰는 글자·점으로 시작하는 이름을 막는다(64자까지).
+_setup_valid_space_name() {
+  local n="$1"
+  [ -n "$n" ] && [ "${#n}" -le 64 ] || return 1
+  case "$n" in .*|*[/\\:\*\?\"\<\>\|]*|*" ") return 1 ;; esac
+  return 0
+}
+
+# 작업 폴더 이름을 정한다(홈 폴더 아래). 기본값은 이미 정해 둔 폴더의 이름, 없으면 cowork-space.
+# COWORK_LITE_SPACE_NAME 이 있으면 묻지 않는다. 동기화 저장소 연결보다 먼저 정해야 한다(연결이 이 폴더를 쓰므로).
+_setup_space_name() {
+  local f cur def name i; f="$(cl_home)/local.json"
+  cur="$(cl_json_get "$f" space.root 2>/dev/null)"
+  def="${cur##*/}"; [ -n "$def" ] || def="cowork-space"
+  name="${COWORK_LITE_SPACE_NAME:-}"
+  if [ -z "$name" ]; then
+    [ -z "$COWORK_LITE_YES" ] && cl_say "업무 파일을 모을 작업 폴더의 이름을 정합니다. 내 홈 폴더($HOME) 아래에 만들어집니다."
+    for i in 1 2 3; do
+      name="$(_setup_ask "작업 폴더 이름" "$def")"
+      _setup_valid_space_name "$name" && break
+      cl_warn "폴더 이름에는 / \\ : * ? \" < > | 를 쓸 수 없고, 점(.)으로 시작할 수 없습니다. 다시 입력해 주세요."
+      name="$def"
+    done
+  fi
+  if ! _setup_valid_space_name "$name"; then
+    cl_warn "✘ 작업 폴더 이름이 올바르지 않습니다: $name"
+    return 1
+  fi
+  # 이름을 바꾸지 않았고 이미 경로가 정해져 있으면(다시 실행, 다른 위치로 지정한 경우) 그 경로를 그대로 둔다.
+  if [ -n "$cur" ] && [ "${cur##*/}" = "$name" ]; then
+    cl_say "작업 폴더: $cur"
+    return 0
+  fi
+  cl_json_set "$f" space.root "$HOME/$name" || return 1
+  cl_say "작업 폴더: $HOME/$name"
+}
+
 # 업무 파일을 내 GitHub(비공개)에 동기화할지 묻는다. 건너뛰면 이 노트북에서만 쓰는 로컬 전용 모드(설계 §8b).
 # 묻지 않는 실행(COWORK_LITE_YES)의 기본값은 건너뛰기다. COWORK_LITE_SYNC=yes|no 로 미리 정할 수 있다.
 _setup_sync_choice() {
@@ -185,6 +222,7 @@ _setup_preview() {
   cl_say "- 터미널 설정 파일($(_setup_rcname))에 cowork-lite 명령 경로를 한 줄 추가합니다."
   cl_is_windows && cl_say "- 사용자 환경 변수 PATH에 cowork-lite 폴더를 추가합니다. (PowerShell·명령 프롬프트용, 제거하면 되돌립니다)"
   cl_say "- 기본 스킬을 설치합니다. 외부에서 내려받아 설치하는 프로그램이 포함됩니다: $(packs_summary | paste -sd, - | sed 's/,/, /g')"
+  prereq_check python || { cl_is_windows && cl_say "- Python 이 없어 설치합니다(MS 문서 변환 도구 MarkItDown 용, winget 사용, 몇 분 걸릴 수 있습니다)."; }
   cl_say "- 작업 폴더를 만듭니다: $(cl_space_root) (받은자료·작업중·결과물·업무일지)"
   cl_say "- 설치 위치: $(cl_home)"
   [ -n "$COWORK_LITE_YES" ] && return 0
@@ -193,6 +231,7 @@ _setup_preview() {
 
 _setup_run_inner() {
   _setup_step prereq prereq_run_all || return 1
+  _setup_step spacename _setup_space_name || return 1
   _setup_step syncchoice _setup_sync_choice || return 1
   # Git·gh 는 동기화를 고른 경우에만 확인한다. 로컬 전용 모드에서는 건드리지 않는다.
   if cl_sync_enabled; then
@@ -216,6 +255,8 @@ _setup_run_inner() {
   _setup_step space _setup_space || return 1
   _setup_step hooks _setup_hooks || return 1
   _setup_step path _setup_path || return 1
+  # 기본 스킬 중 MarkItDown 이 Python 을 쓴다. 아직 설치하지 않은 경우에만 Python 을 확인·설치한다(실패해도 설치는 계속한다).
+  _setup_done pack-office || prereq_python_optional
   _setup_step packs packs_install_all || return 1
   _setup_shared_write || { cl_warn "✘ 공유 설정(shared.json)을 기록하지 못했습니다."; return 1; }
   doctor_run || return $?

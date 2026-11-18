@@ -80,6 +80,10 @@ _packs_load() {
 
 # 외부 명령 하나를 실행한다.
 _packs_exec() {
+  # 명령 이름이 python 이면 설치 때 찾은 실제 Python 으로 바꾼다(Windows 앱 스토어 빈 껍데기·PATH 에 아직 없는 새 설치를 피한다).
+  if [ "${1:-}" = python ] && type prereq_python_find >/dev/null 2>&1; then
+    local _py; if _py="$(prereq_python_find)"; then shift; set -- "$_py" "$@"; fi
+  fi
   # 표준입력은 끊는다: 설치 명령이 팩 목록(루프의 입력)을 읽어 버리면 남은 팩이 말없이 건너뛰어진다(실제 Windows 에서 확인).
   if [ -n "${COWORK_LITE_PACK_EXEC:-}" ]; then bash "$COWORK_LITE_PACK_EXEC" "$@" </dev/null; else "$@" </dev/null; fi
 }
