@@ -29,4 +29,8 @@ cat <<EOF
 - 요청하지 않은 범위까지 확장하지 않는다. 시킨 것만 한다.
 - 답변 맨 아래에는 사용자가 답하거나 결정해야 할 것만 핵심으로 요약한다. 결정할 것이 있으면 AskUserQuestion 도구로 선택지(선택 UI)를 만들어 쉽게 고르게 한다. 이 도구를 쓸 수 없으면 번호 목록으로 대신한다. 결정할 것이 없으면 이 부분은 쓰지 않는다.
 EOF
+# 동기화를 켠 경우에만: 시작할 때 다른 노트북의 변경을 받고 못 올린 변경을 올린다(실패해도 세션은 계속).
+# 켜지 않은 사용자는 아래 한 줄(파일 읽기만)만 거치고 동기화 코드는 읽지도 않는다.
+# COWORK_LITE_SKIP_SYNC 가 있으면 건너뛴다(doctor 가 hook 이 실행되는지만 볼 때).
+if [ -z "${COWORK_LITE_SKIP_SYNC:-}" ] && cl_sync_enabled && source "$HERE/../lib/sync.sh" 2>/dev/null; then sync_auto_start; fi
 exit 0

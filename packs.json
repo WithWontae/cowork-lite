@@ -16,6 +16,15 @@
       "pkg_base": "https://nodejs.org/dist",
       "winget_id": "OpenJS.NodeJS.LTS"
     },
+    "git": {
+      "name": "Git",
+      "min": "0.0.0",
+      "optional": true,
+      "official": "https://git-scm.com/",
+      "winget_id": "Git.Git",
+      "mac_hint": "터미널에서 git --version 을 한 번 실행하면 '개발자 도구 설치' 창이 뜹니다. 설치에 몇 분 걸립니다.",
+      "note": "동기화를 켠 경우에만 필요하다. Windows 는 winget, Mac 은 안내만 한다. Mac 안내 문구의 동작은 설계 §9.1b 기준이며 실제 Mac 에서 확인하지 못했다."
+    },
     "gh": {
       "name": "GitHub CLI(gh)",
       "min": "0.0.0",
