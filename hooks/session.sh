@@ -4,7 +4,7 @@
 HERE="${BASH_SOURCE[0]%/*}"; [ "$HERE" = "${BASH_SOURCE[0]}" ] && HERE="."; [[ "$HERE" == /* || "$HERE" == [A-Za-z]:* ]] || HERE="$PWD/$HERE"
 if ! source "$HERE/../lib/common.sh" 2>/dev/null; then
   echo "[cowork-lite] 설치 파일을 찾을 수 없습니다. 사용자에게 cowork-lite setup 을 다시 실행하도록 안내하세요."
-  exit 0
+exit 0
 fi
 version="$(cat "$HERE/../VERSION" 2>/dev/null || echo dev)"
 root="$(cl_space_root)"
@@ -47,4 +47,20 @@ fi
 # 켜지 않은 사용자는 아래 한 줄(파일 읽기만)만 거치고 동기화 코드는 읽지도 않는다.
 # COWORK_LITE_SKIP_SYNC 가 있으면 건너뛴다(doctor 가 hook 이 실행되는지만 볼 때).
 if [ -z "${COWORK_LITE_SKIP_SYNC:-}" ] && cl_sync_enabled && source "$HERE/../lib/sync.sh" 2>/dev/null; then sync_auto_start; fi
+# 이어하기: 진행 중인 업무와 가장 최근 세션 정리를 알린다. 위에서 다른 노트북의 변경을 받은 뒤라서 그 내용도 반영된다.
+# bash 만 쓰는 가벼운 함수라 프로세스를 띄우지 않는다(Windows 에서 프로세스 하나가 40ms 안팎).
+if [ -d "$root" ] && source "$HERE/../lib/task.sh" 2>/dev/null && source "$HERE/../lib/journal.sh" 2>/dev/null; then
+  task_resume_hint "$root"; _resume_tasks="$REPLY"
+  journal_last_section "$root"; _resume_last="$REPLY"
+  if [ -n "$_resume_tasks$_resume_last" ]; then
+    echo
+    echo "[이어하기]"
+    [ -n "$_resume_tasks" ] && echo "- $_resume_tasks"
+    if [ -n "$_resume_last" ]; then
+      echo "- 가장 최근 세션 정리:"
+      while IFS= read -r _l; do echo "    $_l"; done <<< "$_resume_last"
+    fi
+    echo "- 첫 응답의 맨 앞에 한두 줄로 알린다. 사용자가 \"이어서\"라고 하거나 \"업무 시작\"이라고 하면 업무를 고르게 하고, 기존 업무를 고르면 cowork-lite task show <번호> 로 3줄 요약을 보여 준 뒤 그 폴더에서 이어서 일한다."
+  fi
+fi
 exit 0
