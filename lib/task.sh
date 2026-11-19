@@ -132,3 +132,39 @@ task_path() {
   _task_resolve "$TASK_ACTIVE_DIR" "$1" || return 1
   printf '%s\n' "$(_task_dir "$TASK_ACTIVE_DIR")/$REPLY"
 }
+
+# task_show <번호 또는 이름> : 진행 중인 업무를 3줄로 요약한다(폴더·파일 수, 최근 바뀐 것, 마지막 세션 정리의 남은 일).
+task_show() {
+  local name dir files recent root; root="$(cl_space_root)"
+  _task_resolve "$TASK_ACTIVE_DIR" "$1" || return 1
+  name="$REPLY"; dir="$root/$TASK_ACTIVE_DIR/$name"
+  files="$(find "$dir" -type f 2>/dev/null | wc -l | tr -d ' ')"
+  recent="$(ls -1t "$dir" 2>/dev/null | head -3 | paste -sd, - | sed 's/,/, /g')"
+  cl_say "업무: $name"
+  cl_say "- 폴더 $TASK_ACTIVE_DIR/$name, 파일 ${files}개"
+  if [ -n "$recent" ]; then cl_say "- 최근 바뀐 것: $recent"; else cl_say "- 아직 파일이 없습니다."; fi
+  if type journal_last_section >/dev/null 2>&1; then
+    journal_last_section "$root"
+    if [ -n "$REPLY" ]; then
+      cl_say "- 마지막 세션 정리:"
+      printf '%s\n' "$REPLY" | sed 's/^/    /'
+    fi
+  fi
+}
+
+# task_resume_hint <작업 폴더> : 진행 중인 업무를 최대 3건 한 줄로 REPLY 에 둔다(없으면 빈 값). 세션을 시작할 때 쓰므로 외부 프로그램 없이 bash 만 쓴다.
+task_resume_hint() {
+  local root="$1" e n total=0 shown="" k=0
+  REPLY=""
+  for e in "$root/$TASK_ACTIVE_DIR"/*/; do
+    [ -d "$e" ] || continue
+    n="${e%/}"; n="${n##*/}"
+    [[ "$n" =~ ^[0-9]+_.+ ]] || continue
+    total=$((total + 1))
+    if [ "$k" -lt 3 ]; then shown="${shown:+$shown, }$n"; k=$((k + 1)); fi
+  done
+  [ "$total" -gt 0 ] || return 0
+  REPLY="진행 중인 업무 ${total}건: $shown"
+  [ "$total" -gt 3 ] && REPLY="$REPLY 외 $((total - 3))건"
+  return 0
+}

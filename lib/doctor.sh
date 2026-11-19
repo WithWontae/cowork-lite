@@ -139,6 +139,21 @@ doctor_check_skills() {
   done <<< "$(manifest_list)"
 }
 
+# 업무 폴더 점검(경고만, 오류로 세지 않는다): 같은 번호의 업무가 여럿이거나, 같은 이름의 업무가 작업중과 결과물 양쪽에 있으면 알린다.
+# 두 노트북에서 오프라인으로 각각 업무를 만들었거나, 완료·재개 도중 복사본이 남았을 때 생긴다. 파일을 고치지 않는다.
+doctor_check_tasks() {
+  local names dup both total
+  type _task_names >/dev/null 2>&1 || return 0
+  names="$(_task_names 작업중; _task_names 결과물)"
+  total="$(printf '%s\n' "$names" | grep -c .)"
+  [ "$total" -gt 0 ] || return 0
+  dup="$(printf '%s\n' "$names" | sed -n 's/^\([0-9][0-9]*\)_.*/\1/p' | awk '{ print $1 + 0 }' | sort -n | uniq -d | paste -sd, - | sed 's/,/, /g')"
+  both="$(printf '%s\n%s\n' "$(_task_names 작업중)" "$(_task_names 결과물)" | grep . | sort | uniq -d | paste -sd, - | sed 's/,/, /g')"
+  if [ -z "$dup" ] && [ -z "$both" ]; then _doc_ok "업무 폴더 ${total}개에 문제가 없습니다"; return 0; fi
+  if [ -n "$both" ]; then cl_say "⚠ 같은 이름의 업무가 작업중과 결과물 양쪽에 있습니다: $both → 어느 쪽이 맞는지 확인하고 한쪽을 정리해 주세요(cowork-lite space rm)."; fi
+  if [ -n "$dup" ]; then cl_say "⚠ 번호가 겹치는 업무가 있습니다(번호 $dup). 번호 대신 전체 이름으로 지정하면 됩니다. 다른 노트북에서 같은 번호를 각각 만들면 생깁니다."; fi
+}
+
 doctor_run() {
   local home root f d kind path probe res
   DOCTOR_FAILS=0
@@ -195,6 +210,7 @@ doctor_run() {
 
   doctor_check_packs
   doctor_check_skills
+  doctor_check_tasks
 
   if [ "$DOCTOR_FAILS" -eq 0 ]; then
     cl_say "모두 초록불 ✔"; return 0
