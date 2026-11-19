@@ -111,7 +111,10 @@ doctor_check_packs() {
         ver="${f[1]}"; ex="${f[2]}"; argv=("${f[@]:3}")
         out="$(_packs_exec "${argv[@]}" 2>&1 </dev/null)"; rc=$?
         if [ "$rc" -ne 0 ] || { [ "$ex" != "-" ] && [[ "$out" != *"$ex"* ]]; }; then
-          if [ "$ver" = 1 ]; then
+          if [ "${argv[0]}" = python ]; then
+            # Python 은 선택 도구다(MarkItDown 용). 없거나 설치가 안 됐어도 문서 스킬 자체는 정상이므로 오류로 세지 않는다.
+            cl_say "⚠ '$title': Python/MarkItDown 을 쓸 수 없습니다. MS 문서를 마크다운으로 바꾸는 도구만 빠지고 나머지는 정상입니다. 필요하면 Python 3.10 이상을 설치한 뒤 cowork-lite setup 을 다시 실행해 주세요."
+          elif [ "$ver" = 1 ]; then
             _doc_bad "'$title' 점검 명령(${argv[0]})이 실패했습니다" "cowork-lite setup 을 다시 실행해 주세요"
           else
             cl_say "⚠ '$title' 점검 명령(${argv[0]})을 확인하지 못했습니다. (이 점검 명령은 아직 검증되지 않아 오류로 세지 않습니다)"
