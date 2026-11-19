@@ -98,16 +98,16 @@
       "kind": "base",
       "title": "MS 문서(xlsx·docx·pptx·pdf, MarkItDown)",
       "source": "https://github.com/anthropics/skills",
-      "note": "document-skills 는 anthropics/skills 마켓플레이스 플러그인. MarkItDown 은 Python 3.10~3.14 가 필요하다. 설치기가 Python 을 준비한다(prereq.python: Windows 는 winget, Mac 은 안내). python 은 설치 때 찾은 실제 Python 으로 바뀌어 실행된다. pip 단계는 optional 이라 Python 이 없거나 실패하면 경고만 하고 넘어간다(문서 스킬 자체는 영향 없음). markitdown-mcp 의 설치·등록 명령은 문서에서 확인하지 못했다. Windows 지원 여부도 미확인.",
+      "note": "document-skills 는 anthropics/skills 마켓플레이스 플러그인. MarkItDown 은 Python 3.10~3.14 가 필요하다. 설치기가 Python 을 준비한다(prereq.python: Windows 는 winget, Mac 은 안내). python 은 설치 때 찾은 실제 Python 으로 바뀌어 실행된다. pip 단계는 optional 이라 Python 이 없거나 실패하면 경고만 하고 넘어간다(문서 스킬 자체는 영향 없음). markitdown·markitdown-mcp 설치와 python -m markitdown --help 는 Windows 11(Python 3.12.10, winget)에서 실제 실행해 확인했다(2026-11-19). markitdown-mcp 를 Claude 에 등록하는 명령은 미확인.",
       "install": [
         {"type": "run", "argv": ["claude", "plugin", "marketplace", "add", "anthropics/skills"], "verified": true},
         {"type": "run", "argv": ["claude", "plugin", "install", "document-skills@anthropic-agent-skills"], "verified": true},
         {"type": "run", "argv": ["python", "-m", "pip", "install", "markitdown[all]"], "optional": true, "verified": true},
-        {"type": "run", "argv": ["python", "-m", "pip", "install", "markitdown-mcp"], "optional": true, "verified": false}
+        {"type": "run", "argv": ["python", "-m", "pip", "install", "markitdown-mcp"], "optional": true, "verified": true}
       ],
       "verify": [
         {"type": "run", "argv": ["claude", "plugin", "list"], "expect": "document-skills", "verified": false},
-        {"type": "run", "argv": ["python", "-m", "markitdown", "--help"], "verified": false}
+        {"type": "run", "argv": ["python", "-m", "markitdown", "--help"], "verified": true}
       ],
       "uninstall": "설치한 플러그인과 파이썬 패키지만 제거한다. 사용자의 문서는 건드리지 않는다."
     },
