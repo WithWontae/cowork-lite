@@ -24,12 +24,12 @@ if [ -z "$src" ]; then
   src="$tmp"
 fi
 
-for item in bin lib hooks packs.json VERSION; do
+for item in bin lib hooks packs packs.json VERSION; do
   [ -e "$src/$item" ] || { echo "설치 파일이 빠져 있습니다($item). 잠시 뒤에 다시 시도해 주세요."; exit 1; }
 done
 
 mkdir -p "$home" || { echo "설치 폴더를 만들 수 없습니다: $home"; exit 1; }
-for item in bin lib hooks packs.json VERSION; do
+for item in bin lib hooks packs packs.json VERSION; do
   rm -rf "${home:?}/$item"
   cp -R "$src/$item" "$home/$item" || { echo "파일을 복사하지 못했습니다: $item"; exit 1; }
 done

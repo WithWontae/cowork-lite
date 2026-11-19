@@ -9,8 +9,10 @@ description: 전기공사 표준품셈 기준으로 일위대가를 검증하거
 
 ## 먼저 확인할 것 (없으면 멈춘다)
 
-1. `data/labor-norms.csv`(공종별 직종·수량), `data/unit-wages.csv`(직종별 노임), `data/surcharge-rules.csv`(할증)에 **행이 있는지** 본다.
-2. 비어 있으면 알리고 멈춘다: "품셈·노임·할증 데이터가 아직 없습니다. 공식 품셈(최신 개정본)과 해당 연도 노임 단가를 확인해 `data/` 에 넣어 주세요. 제가 수치를 임의로 채우지 않습니다."
+기준 데이터는 **작업 폴더의 `.cowork/data/elec-works/`** 에 있다(스킬 폴더의 `data/` 는 빈 양식일 뿐이다).
+
+1. `.cowork/data/elec-works/` 의 `labor-norms.csv`(공종별 직종·수량), `unit-wages.csv`(직종별 노임), `surcharge-rules.csv`(할증)에 **행이 있는지** 본다.
+2. 파일이 없거나 비어 있으면 알리고 멈춘다: "품셈·노임·할증 데이터가 아직 없습니다. Claude 에 '온보딩'이라고 보내시면 질문으로 채워 드립니다. 제가 수치를 임의로 채우지 않습니다."
 3. 행마다 `출처`(품셈 이름·쪽·판)와 `기준일`(적용 연도)이 있어야 쓴다.
 
 ## 하는 일
@@ -24,8 +26,10 @@ description: 전기공사 표준품셈 기준으로 일위대가를 검증하거
 ### 계산
 
 ```
-python scripts/unit_price.py --work "전선관 배관" --quantity 100
+python ~/.claude/skills/std-estimate/scripts/unit_price.py --work "전선관 배관" --quantity 100 --data .cowork/data/elec-works
 ```
+
+`python` 이 없으면 `python3` 또는 `py -3` 을 쓴다.
 
 공종 이름은 `labor-norms.csv` 의 `공종` 열과 정확히 같아야 한다. 일치하는 행이 없으면 계산하지 않고 알린다.
 
