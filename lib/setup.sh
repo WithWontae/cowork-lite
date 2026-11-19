@@ -14,7 +14,7 @@ _setup_mark() { mkdir -p "$(_setup_state_dir)" && : > "$(_setup_state_dir)/$1.do
 _setup_label() {
   case "$1" in
     prereq) echo "선행 도구" ;; syncchoice) echo "동기화 선택" ;; identity) echo "내 정보" ;; space) echo "작업 폴더" ;;
-    hooks) echo "안전장치 등록" ;; path) echo "명령 경로" ;; packs) echo "기본 스킬 설치" ;; *) echo "$1" ;;
+    hooks) echo "안전장치 등록" ;; path) echo "명령 경로" ;; packs) echo "기본 스킬 설치" ;; skills) echo "직접 만든 스킬 설치" ;; *) echo "$1" ;;
   esac
 }
 
@@ -191,14 +191,15 @@ _setup_path_remove() {
 
 _setup_files_remove() {
   local home item; home="$(cl_home)"
-  for item in bin lib hooks packs.json VERSION; do rm -rf "${home:?}/$item"; done
+  for item in bin lib hooks packs packs.json VERSION; do rm -rf "${home:?}/$item"; done
 }
 
 _setup_rollback() {
   cl_warn "설치를 끝내지 못해 바꾼 내용을 되돌립니다. (작업 폴더의 파일은 건드리지 않습니다)"
   settings_unregister_hooks >/dev/null 2>&1
   _setup_path_remove
-  rm -f "$(_setup_state_dir)/hooks.done" "$(_setup_state_dir)/path.done" "$(_setup_state_dir)/packs.done"
+  rm -f "$(_setup_state_dir)/hooks.done" "$(_setup_state_dir)/path.done" "$(_setup_state_dir)/packs.done" "$(_setup_state_dir)/skills.done"
+  skills_remove_all
   # 이미 설치된 외부 프로그램(기본 스킬)은 되돌리지 않는다. 다시 실행하면 끝난 팩은 건너뛰고 이어서 진행한다.
   manifest_remove_all_of file
   _setup_files_remove
@@ -221,6 +222,7 @@ _setup_preview() {
   cl_say "- Claude에 안전장치(hook) 2개를 등록합니다. 바뀌는 파일: $(settings_path) (바꾸기 전에 자동으로 백업합니다)"
   cl_say "- 터미널 설정 파일($(_setup_rcname))에 cowork-lite 명령 경로를 한 줄 추가합니다."
   cl_is_windows && cl_say "- 사용자 환경 변수 PATH에 cowork-lite 폴더를 추가합니다. (PowerShell·명령 프롬프트용, 제거하면 되돌립니다)"
+  cl_say "- 직접 만든 스킬(온보딩, 전기 공무 3종)을 $(skills_dir) 에 복사합니다."
   cl_say "- 기본 스킬을 설치합니다. 외부에서 내려받아 설치하는 프로그램이 포함됩니다: $(packs_summary | paste -sd, - | sed 's/,/, /g')"
   prereq_check python || { cl_is_windows && cl_say "- Python 이 없어 설치합니다(MS 문서 변환 도구 MarkItDown 용, winget 사용, 몇 분 걸릴 수 있습니다)."; }
   cl_say "- 작업 폴더를 만듭니다: $(cl_space_root) (받은자료·작업중·결과물·업무일지)"
@@ -258,6 +260,7 @@ _setup_run_inner() {
   # 기본 스킬 중 MarkItDown 이 Python 을 쓴다. 아직 설치하지 않은 경우에만 Python 을 확인·설치한다(실패해도 설치는 계속한다).
   _setup_done pack-office || prereq_python_optional
   _setup_step packs packs_install_all || return 1
+  _setup_step skills skills_install_all || return 1
   _setup_shared_write || { cl_warn "✘ 공유 설정(shared.json)을 기록하지 못했습니다."; return 1; }
   doctor_run || return $?
   # 안전장치(hook)는 Claude Code가 시작할 때 읽는다. 이미 열려 있던 창은 새 설정을 모르고, Windows에서 Git을 방금 설치했다면
@@ -287,7 +290,8 @@ uninstall_run() {
     return 1
   }
   _setup_path_remove
-  for item in lib hooks state packs.json VERSION manifest.tsv; do rm -rf "${home:?}/$item"; done
+  skills_remove_all
+  for item in lib hooks state packs packs.json VERSION manifest.tsv; do rm -rf "${home:?}/$item"; done
   if [ -n "${COWORK_LITE_VIA_CMD:-}" ] && [ -f "$home/bin/cowork-lite.cmd" ]; then
     # cowork-lite.cmd 래퍼로 실행 중이다. 실행 중인 배치 파일을 지우면 cmd가 "배치 파일을 찾을 수 없습니다"를 내므로
     # 지우지 않고 표시 파일만 남긴다. 래퍼가 끝난 뒤 스스로 지운다.

@@ -121,6 +121,16 @@ doctor_check_packs() {
   done <<< "$PACKS_LINES"
 }
 
+# 직접 만든 스킬(manifest 의 skill 항목)이 실제로 복사되어 있는지 본다.
+doctor_check_skills() {
+  local kind path
+  while IFS=$'\t' read -r kind path; do
+    [ "$kind" = skill ] && [ -n "$path" ] || continue
+    if [ -f "$path/SKILL.md" ]; then _doc_ok "직접 만든 스킬 '$(basename "$path")' 이(가) 설치되어 있습니다"
+    else _doc_bad "직접 만든 스킬 '$(basename "$path")' 이(가) 없습니다" "cowork-lite setup 을 다시 실행해 주세요"; fi
+  done <<< "$(manifest_list)"
+}
+
 doctor_run() {
   local home root f d kind path probe res
   DOCTOR_FAILS=0
@@ -164,6 +174,7 @@ doctor_run() {
 
   while IFS=$'\t' read -r kind path; do
     [ -n "$path" ] || continue
+    [ "$kind" = skill ] && continue   # 스킬은 doctor_check_skills 가 본다
     if [ ! -e "$path" ]; then
       _doc_bad "설치 기록에 있는 항목이 없습니다: $(basename "$path")" "cowork-lite setup 을 다시 실행해 주세요"
     fi
@@ -175,6 +186,7 @@ doctor_run() {
   else _doc_bad "Guard가 받은자료를 지키지 못하고 있습니다" "cowork-lite setup 을 다시 실행하거나 도움을 요청해 주세요"; fi
 
   doctor_check_packs
+  doctor_check_skills
 
   if [ "$DOCTOR_FAILS" -eq 0 ]; then
     cl_say "모두 초록불 ✔"; return 0

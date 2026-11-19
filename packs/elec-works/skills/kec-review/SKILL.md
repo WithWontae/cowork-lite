@@ -9,8 +9,10 @@ description: 전기설비 설계·시공 내용이 KEC(한국전기설비규정)
 
 ## 먼저 확인할 것 (없으면 멈춘다)
 
-1. `data/kec-clauses.csv`, `data/cable-ampacity.csv`, `data/voltage-drop-formulas.json` 에 **행이 채워져 있는지** 본다.
-2. 비어 있으면 이렇게 알리고 멈춘다: "기준 데이터가 아직 없습니다. KEC 원문(최신 개정본)에서 확인한 값을 `data/` 에 넣어 주세요. 제가 임의로 수치를 채우지 않습니다."
+기준 데이터는 **작업 폴더의 `.cowork/data/elec-works/`** 에 있다(스킬 폴더의 `data/` 는 빈 양식일 뿐이다).
+
+1. `.cowork/data/elec-works/` 의 `kec-clauses.csv`, `cable-ampacity.csv`, `voltage-drop-formulas.json` 에 **행이 채워져 있는지** 본다.
+2. 파일이 없거나 비어 있으면 이렇게 알리고 멈춘다: "기준 데이터가 아직 없습니다. Claude 에 '온보딩'이라고 보내시면 질문으로 채워 드립니다. 제가 임의로 수치를 채우지 않습니다."
 3. 행마다 `출처`와 `기준일`이 있는지 본다. 없으면 그 행은 쓰지 않고 사용자에게 알린다.
 
 ## 하는 일
@@ -24,8 +26,10 @@ description: 전기설비 설계·시공 내용이 KEC(한국전기설비규정)
 ### 전압강하 계산
 
 ```
-python scripts/voltage_drop.py --system 3p3w --length-m 120 --current-a 45 --area-mm2 25 --voltage 380
+python ~/.claude/skills/kec-review/scripts/voltage_drop.py --system <계산식 이름> --length-m 120 --current-a 45 --area-mm2 25 --voltage 380 --data .cowork/data/elec-works/voltage-drop-formulas.json
 ```
+
+`python` 이 없으면 `python3` 또는 `py -3` 을 쓴다. `<계산식 이름>` 은 데이터 파일의 `system` 값이다.
 
 결과(전압강하 V, 비율 %)를 표로 보여 주고 허용 한도와 비교한다. 한도 값은 `kec-clauses.csv` 의 조항에서 가져오며, 없으면 비교하지 않고 "한도 기준 데이터가 없습니다"라고 한다.
 
