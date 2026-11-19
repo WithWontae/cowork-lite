@@ -2,7 +2,7 @@
 # cowork-lite 명령 분배기
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB="$HERE/../lib"
-for f in common manifest settings space guard prereq packs skills sync doctor setup; do
+for f in common manifest settings space guard prereq packs skills sync task journal doctor setup; do
   if ! source "$LIB/$f.sh" 2>/dev/null; then
     echo "설치 파일이 손상되었습니다. 한 줄 설치 명령을 다시 붙여넣어 주세요."
     exit 1
@@ -18,6 +18,12 @@ cowork-lite 사용법
   cowork-lite space find <단어>      작업 폴더에서 파일을 찾습니다
   cowork-lite space rm <경로…>       확인 후 휴지통으로 옮깁니다
   cowork-lite space restore <경로>   휴지통에서 되돌립니다
+  cowork-lite task list [--done]     진행 중(또는 완료한) 업무 폴더 목록을 봅니다
+  cowork-lite task new "<이름>"      작업중/<번호>_<이름> 업무 폴더를 만듭니다
+  cowork-lite task done <번호>       업무 폴더를 통째로 결과물로 옮깁니다(업무 완료)
+  cowork-lite task reopen <번호>     완료한 업무를 다시 작업중으로 가져옵니다
+  cowork-lite session save "<내용>"  업무일지(업무일지/년-월/날짜.md)에 덧붙이고, 동기화를 켰으면 바로 동기화합니다
+  cowork-lite journal add "<내용>"   업무일지에만 덧붙입니다(동기화 안 함)
   cowork-lite sync [--dry-run]       다른 노트북과 맞춥니다(받기 → 올리기). --dry-run 은 미리보기만 합니다
   cowork-lite sync status            연결 상태와 마지막 동기화를 봅니다
   cowork-lite sync resolve           같은 파일을 양쪽에서 고쳤을 때 어느 쪽을 쓸지 정하는 방법을 알려 줍니다
@@ -39,6 +45,28 @@ case "$cmd" in
       rm)      space_rm "$@" ;;
       restore) space_restore "$@" ;;
       *)       usage; exit 2 ;;
+    esac ;;
+  task)
+    sub="${1:-}"; [ $# -gt 0 ] && shift
+    case "$sub" in
+      list)   task_list "$@" ;;
+      new)    task_new "$@" ;;
+      done)   task_done "$@" ;;
+      reopen) task_reopen "$@" ;;
+      path)   task_path "$@" ;;
+      *)      echo "사용법: cowork-lite task list [--done] | task new \"<이름>\" | task done <번호> | task reopen <번호>"; exit 2 ;;
+    esac ;;
+  session)
+    sub="${1:-}"; [ $# -gt 0 ] && shift
+    case "$sub" in
+      save) session_save "$@" ;;
+      *)    echo "사용법: cowork-lite session save \"<내용>\""; exit 2 ;;
+    esac ;;
+  journal)
+    sub="${1:-}"; [ $# -gt 0 ] && shift
+    case "$sub" in
+      add) journal_add "$@" ;;
+      *)   echo "사용법: cowork-lite journal add \"<내용>\""; exit 2 ;;
     esac ;;
   sync)
     sub="${1:-}"; [ $# -gt 0 ] && shift
