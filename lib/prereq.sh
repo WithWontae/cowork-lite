@@ -132,7 +132,7 @@ prereq_node_pkg_url() {
 # 내려받기: 실패하면 반쯤 받은 파일을 남기지 않고, 이유(curl 오류)를 알린다.
 _prereq_download() {
   local tmp="${2}.part.$$" err
-  if err="$(curl -fsS -o "$tmp" "$1" 2>&1)"; then mv "$tmp" "$2"; else
+  if err="$(curl -fsSL -o "$tmp" "$1" 2>&1)"; then mv "$tmp" "$2"; else
     rm -f "$tmp"
     cl_warn "내려받지 못했습니다: $1"
     [ -n "$err" ] && cl_warn "  이유: $err"
@@ -168,6 +168,79 @@ _prereq_claude_ps1_install() {
   return $rc
 }
 
+# Windows 에서 Python 은 python.org 공식 설치 파일로도 설치할 수 있다(winget 이 없거나 실패했을 때의 대안).
+# 내 계정에만 설치하므로 관리자 권한이 필요 없다. 내려받은 파일은 서명(Python Software Foundation)을 확인한 뒤에만 실행한다.
+_prereq_python_official_install() {
+  local url dir exe sig rc
+  url="$(_prereq_cfg python installer_url_win)"
+  [ -n "$url" ] || return 1
+  case "${PROCESSOR_ARCHITECTURE:-AMD64}" in
+    AMD64|x86_64) ;;
+    *) cl_warn "이 PC(${PROCESSOR_ARCHITECTURE})에는 자동 설치를 지원하지 않습니다. $(_prereq_cfg python official) 에서 직접 설치해 주세요."; return 1 ;;
+  esac
+  command -v powershell.exe >/dev/null 2>&1 || { cl_warn "PowerShell 을 찾을 수 없어 내려받은 파일의 서명을 확인할 수 없습니다."; return 1; }
+  dir="$(mktemp -d "${TMPDIR:-/tmp}/cowork-lite-py.XXXXXX")" || return 1
+  exe="$dir/python-installer.exe"
+  cl_say "python.org 에서 Python 설치 파일을 내려받습니다(약 27MB)."
+  _prereq_download "$url" "$exe" || { rm -rf "$dir"; return 1; }
+  sig="$(powershell.exe -NoProfile -Command "\$s = Get-AuthenticodeSignature -LiteralPath '$(cygpath -w "$exe" 2>/dev/null || printf '%s' "$exe")'; \$s.Status.ToString() + '|' + \$s.SignerCertificate.Subject" 2>/dev/null </dev/null | tr -d '\r')"
+  case "$sig" in
+    "Valid|"*"Python Software Foundation"*) ;;
+    *) cl_warn "내려받은 파일의 서명을 확인하지 못해 실행하지 않습니다(확인 결과: ${sig:-없음})."; rm -rf "$dir"; return 1 ;;
+  esac
+  cl_say "Python 을 설치합니다. 내 계정에만 설치하며 관리자 권한은 필요 없습니다. 몇 분 걸릴 수 있습니다."
+  # Git Bash 는 `/quiet` 같은 인자를 경로로 바꿔 버리므로 변환을 끈다(cmd.exe /c 때와 같은 문제).
+  MSYS2_ARG_CONV_EXCL='*' "$exe" /quiet InstallAllUsers=0 PrependPath=1 Include_launcher=0 Include_test=0 </dev/null
+  rc=$?
+  rm -rf "$dir"
+  [ $rc -eq 0 ] || cl_warn "Python 설치 파일이 오류로 끝났습니다(종료 코드 $rc)."
+  return $rc
+}
+
+# Microsoft Visual C++ 런타임(msvcp140.dll 등). MarkItDown 이 쓰는 onnxruntime 이 필요로 하며, 새로 설치한 Windows 10 에는 없을 수 있다
+# (없으면 python -m markitdown 이 "DLL load failed while importing onnxruntime_pybind11_state" 로 실패한다 — 실제 Windows 10 에서 겪음).
+_prereq_vcredist_present() {
+  local sys; sys="$(cygpath -u "${SYSTEMROOT:-C:\\Windows}" 2>/dev/null || printf '%s' "${SYSTEMROOT:-/c/Windows}")"
+  [ -f "$sys/System32/msvcp140.dll" ] && [ -f "$sys/System32/vcruntime140_1.dll" ]
+}
+
+# 설치: winget → 안 되면 Microsoft 공식 주소(aka.ms)에서 받아 서명(Microsoft Corporation)을 확인한 뒤 실행. 관리자 권한 확인 창이 뜬다.
+_prereq_vcredist_install() {
+  local url dir exe sig rc
+  if _prereq_winget_install vcredist; then return 0; fi
+  url="$(_prereq_cfg vcredist installer_url_win)"; [ -n "$url" ] || return 1
+  command -v powershell.exe >/dev/null 2>&1 || return 1
+  dir="$(mktemp -d "${TMPDIR:-/tmp}/cowork-lite-vc.XXXXXX")" || return 1
+  exe="$dir/vc_redist.x64.exe"
+  cl_say "Microsoft 공식 주소에서 Visual C++ 런타임을 내려받습니다(약 25MB)."
+  _prereq_download "$url" "$exe" || { rm -rf "$dir"; return 1; }
+  sig="$(powershell.exe -NoProfile -Command "\$s = Get-AuthenticodeSignature -LiteralPath '$(cygpath -w "$exe" 2>/dev/null || printf '%s' "$exe")'; \$s.Status.ToString() + '|' + \$s.SignerCertificate.Subject" 2>/dev/null </dev/null | tr -d '\r')"
+  case "$sig" in
+    "Valid|"*"Microsoft Corporation"*) ;;
+    *) cl_warn "내려받은 파일의 서명을 확인하지 못해 실행하지 않습니다(확인 결과: ${sig:-없음})."; rm -rf "$dir"; return 1 ;;
+  esac
+  MSYS2_ARG_CONV_EXCL='*' "$exe" /install /quiet /norestart </dev/null
+  rc=$?
+  rm -rf "$dir"
+  # 3010 = 다시 시작 필요, 1638 = 같거나 더 새 버전이 이미 있음. bash 는 종료 코드를 256 으로 나눈 나머지(3010→194, 1638→102)로 받으므로 둘 다 성공으로 본다.
+  case "$rc" in 0|3010|194|1638|102) return 0 ;; esac
+  cl_warn "Visual C++ 설치 파일이 오류로 끝났습니다(종료 코드 $rc)."
+  return $rc
+}
+
+# Windows 에서 Python 이 있는데 이 런타임이 없으면 설치한다. 선택 사항이라 실패해도 설치를 막지 않는다(항상 0).
+prereq_vcredist_optional() {
+  cl_is_windows || return 0
+  _prereq_vcredist_present && return 0
+  cl_say "MS 문서 변환 도구(MarkItDown)에 필요한 Microsoft Visual C++ 런타임이 없어 설치합니다. 권한 확인 창이 나오면 [예]를 눌러 주세요."
+  if _prereq_vcredist_install; then
+    cl_say "✔ Visual C++ 런타임 설치를 마쳤습니다."
+  else
+    cl_warn "⚠ Visual C++ 런타임을 설치하지 못했습니다. 선택 사항이라 계속 진행합니다. MS 문서 변환 도구는 나중에 $(_prereq_cfg vcredist official) 에서 설치한 뒤 쓸 수 있습니다."
+  fi
+  return 0
+}
+
 _prereq_real_install() {
   local tool="$1" dir url pkg rc=0
   if [ "$(cl_os)" = windows ]; then
@@ -176,6 +249,10 @@ _prereq_real_install() {
     if [ "$tool" = claude ]; then
       cl_warn "winget 으로 설치하지 못해 공식 설치기로 다시 시도합니다."
       _prereq_claude_ps1_install; return $?
+    fi
+    if [ "$tool" = python ]; then
+      cl_warn "winget 으로 설치하지 못해 python.org 공식 설치 파일로 다시 시도합니다."
+      _prereq_python_official_install; return $?
     fi
     return $rc
   fi
@@ -239,7 +316,7 @@ prereq_env_notice() {
     cl_say "ℹ 이 PC는 Windows 10(빌드 $build)으로 보입니다. cowork-lite 는 Windows 11 과 Mac 에서 확인했습니다. 계속 진행하지만 일부 단계가 안 될 수 있습니다."
   fi
   if ! command -v winget >/dev/null 2>&1; then
-    cl_say "ℹ winget(Windows 패키지 관리자)이 없습니다. Claude Code 는 공식 설치기로 설치하고, 그 밖의 도구(Node.js 등)는 공식 주소를 안내합니다."
+    cl_say "ℹ winget(Windows 패키지 관리자)이 없습니다. Claude Code 와 Python 은 공식 설치기로 설치하고, 그 밖의 도구(Node.js 등)는 공식 주소를 안내합니다."
   fi
   return 0
 }

@@ -259,6 +259,8 @@ _setup_run_inner() {
   _setup_step path _setup_path || return 1
   # 기본 스킬 중 MarkItDown 이 Python 을 쓴다. 아직 설치하지 않은 경우에만 Python 을 확인·설치한다(실패해도 설치는 계속한다).
   _setup_done pack-office || prereq_python_optional
+  # Python 이 있는데 Visual C++ 런타임이 없으면 MarkItDown 이 불러와지지 않는다(Windows). 이미 끝난 설치를 다시 실행할 때도 점검한다.
+  prereq_python_find >/dev/null 2>&1 && prereq_vcredist_optional
   _setup_step packs packs_install_all || return 1
   _setup_step skills skills_install_all || return 1
   _setup_shared_write || { cl_warn "✘ 공유 설정(shared.json)을 기록하지 못했습니다."; return 1; }
