@@ -30,11 +30,13 @@ def load_formula(path, system):
     try:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
+    except FileNotFoundError:
+        fail("기준 데이터가 아직 없습니다. Claude 에 '온보딩'이라고 보내시면 질문으로 채워 드립니다. (찾은 위치: %s)" % path)
     except (OSError, ValueError) as e:
         fail("계산식 데이터를 읽지 못했습니다: %s" % e)
     rows = data.get("formulas") or []
     if not rows:
-        fail("기준 데이터가 아직 없습니다. KEC 원문에서 확인한 계수를 data/voltage-drop-formulas.json 에 넣어 주세요.")
+        fail("기준 데이터가 아직 없습니다. Claude 에 '온보딩'이라고 보내시면 KEC 원문에서 확인한 계수를 질문으로 채워 드립니다.")
     for r in rows:
         if r.get("system") == system:
             if not r.get("출처") or not r.get("기준일"):

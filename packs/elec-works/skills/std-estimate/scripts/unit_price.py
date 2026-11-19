@@ -30,6 +30,8 @@ def read_rows(path):
     try:
         with open(path, encoding="utf-8-sig", newline="") as f:
             return list(csv.DictReader(f))
+    except FileNotFoundError:
+        fail("기준 데이터가 아직 없습니다. Claude 에 '온보딩'이라고 보내시면 질문으로 채워 드립니다. (찾은 위치: %s)" % path)
     except OSError as e:
         fail("파일을 읽지 못했습니다: %s" % e)
 
