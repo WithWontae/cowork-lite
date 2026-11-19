@@ -98,11 +98,14 @@ function Install-CoworkLite {
         if (-not $url) { $url = 'https://raw.githubusercontent.com/WithWontae/cowork-lite/main/install.sh' }
         $tmp = Join-Path ([IO.Path]::GetTempPath()) ('cowork-lite-install-' + [Guid]::NewGuid().ToString('N') + '.sh')
         try {
-            Write-Host 'cowork-lite를 내려받는 중입니다…'
+            Write-Host '설치 파일(install.sh)을 내려받는 중입니다…'
             try {
-                Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $tmp
+                # 진행 표시줄을 끄고(Windows PowerShell 5.1 에서 느려지는 원인) 시간 제한을 둔다.
+                $oldProgress = $ProgressPreference; $ProgressPreference = 'SilentlyContinue'
+                try { Invoke-WebRequest -UseBasicParsing -TimeoutSec 60 -Uri $url -OutFile $tmp } finally { $ProgressPreference = $oldProgress }
             } catch {
-                Write-Host '✘ 내려받지 못했습니다. 인터넷 연결이나 회사 보안 때문일 수 있습니다. 잠시 뒤에 다시 시도해 주세요.'
+                Write-Host '✘ 내려받지 못했습니다. 인터넷 연결이나 회사 보안(프록시·방화벽) 때문일 수 있습니다. 잠시 뒤에 다시 시도해 주세요.'
+                Write-Host ('  이유: ' + $_.Exception.Message)
                 return 1
             }
             return (Invoke-CoworkBash $bash ($tmp -replace '\\', '/'))
