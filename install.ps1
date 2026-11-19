@@ -70,10 +70,11 @@ function Install-CoworkLite {
             Write-Host '권한 확인 창이 나오면 [예]를 눌러 주세요.'
             $winget = Get-Command winget -ErrorAction SilentlyContinue
             if (-not $winget) {
-                Write-Host '✘ winget을 찾을 수 없어 Git을 설치하지 못했습니다.'
+                Write-Host '✘ winget(Windows 패키지 관리자)을 찾을 수 없어 Git을 설치하지 못했습니다.'
+                Write-Host '  Windows 10 에서는 Microsoft Store 의 "앱 설치 관리자(App Installer)"를 설치·업데이트하면 winget 이 생깁니다. 또는 https://git-scm.com/download/win 에서 Git 을 직접 설치한 뒤 같은 명령을 다시 붙여넣으세요.'
             } else {
                 & winget install --id Git.Git -e --source winget --accept-package-agreements --accept-source-agreements | Out-Host
-                if ($LASTEXITCODE -ne 0) { Write-Host '✘ Git 설치에 실패했습니다. 인터넷 연결이나 회사 보안 때문일 수 있습니다.' }
+                if ($LASTEXITCODE -ne 0) { Write-Host ("✘ Git 설치에 실패했습니다(winget 종료 코드 $LASTEXITCODE). 위에 나온 오류 문구를 확인해 주세요. 인터넷 연결이나 회사 보안 때문일 수 있습니다.") }
                 Update-CoworkPath
                 $bash = Find-CoworkGitBash
             }
@@ -83,7 +84,7 @@ function Install-CoworkLite {
             Write-Host 'IT 담당자에게 이렇게 요청해 주세요:'
             Write-Host '- 설치할 프로그램: Git for Windows'
             Write-Host '- 공식 주소: https://git-scm.com/download/win'
-            Write-Host '- 개인 PC에 설치하려면 관리자 권한이 필요합니다.'
+            Write-Host '- 회사 보안 정책으로 설치가 막힌 경우에만 필요합니다. 이 프로그램을 설치할 수 있게 허용해 달라고 요청해 주세요.'
             return 1
         }
 
