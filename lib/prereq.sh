@@ -230,9 +230,11 @@ prereq_it_request_text() {
 # Windows 11 이 아니면(빌드 22000 미만) 확인한 환경이 아니라고 알리고, winget 이 없으면 미리 알린다.
 prereq_env_notice() {
   local ver build
-  cl_is_windows && command -v cmd.exe >/dev/null 2>&1 || return 0
-  ver="$(cmd.exe /c ver 2>/dev/null | tr -d '\r' | sed -n 's/.*\[[^0-9]*\([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p' | head -1)"
-  build="${ver##*.}"
+  cl_is_windows || return 0
+  # Windows 빌드 번호는 `uname -s`(예: MINGW64_NT-10.0-19045)의 끝에서 읽는다. cmd.exe 를 부르지 않는다:
+  # Git Bash 는 `/c` 인자를 경로로 바꿔 버려(`cmd.exe /c ver` 가 대화형 cmd 를 띄워) 입력을 기다리며 설치가 멈춘다(실제로 겪음).
+  ver="$(uname -s 2>/dev/null)"
+  case "$ver" in *_NT-*) build="${ver##*-}" ;; *) build="" ;; esac
   if [ -n "$build" ] && [ "$build" -lt 22000 ] 2>/dev/null; then
     cl_say "ℹ 이 PC는 Windows 10(빌드 $build)으로 보입니다. cowork-lite 는 Windows 11 과 Mac 에서 확인했습니다. 계속 진행하지만 일부 단계가 안 될 수 있습니다."
   fi
