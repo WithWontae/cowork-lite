@@ -34,12 +34,22 @@
       "winget_id": "GitHub.cli",
       "note": "PR 만들기 등 GitHub 작업에 쓴다. 필수가 아니라 실패해도 설치를 막지 않는다. Windows 는 winget 으로 설치한다(2026-11-16 실제 설치 확인). Mac 은 자동 설치하지 않고 안내만 한다(Homebrew 를 쓰지 않는 원칙). 로그인은 사용자가 gh auth login 으로 직접 한다."
     },
+    "vcredist": {
+      "name": "Microsoft Visual C++ 런타임",
+      "min": "0.0.0",
+      "optional": true,
+      "official": "https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist",
+      "winget_id": "Microsoft.VCRedist.2015+.x64",
+      "installer_url_win": "https://aka.ms/vs/17/release/vc_redist.x64.exe",
+      "note": "MarkItDown 이 쓰는 onnxruntime 이 필요로 한다. 새로 설치한 Windows 10 에는 없을 수 있다(실제 Windows 10 에서 DLL load failed 확인, 2026-11-20). Windows 에서만 설치하고, 관리자 권한 확인 창이 뜬다. 실패해도 설치를 막지 않는다."
+    },
     "python": {
       "name": "Python",
       "min": "3.10.0",
       "optional": true,
       "official": "https://www.python.org/downloads/",
       "winget_id": "Python.Python.3.12",
+      "installer_url_win": "https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe",
       "mac_hint": "python.org 에서 3.10 이상(권장 3.12)을 내려받아 설치해 주세요.",
       "note": "MarkItDown(MS 문서 변환)에 필요하다. 없으면 Windows 는 winget 으로 설치하고, Mac 은 안내만 한다. Windows 의 python 은 앱 스토어로 연결되는 빈 껍데기일 수 있어 실제로 실행해 버전을 확인한다."
     }

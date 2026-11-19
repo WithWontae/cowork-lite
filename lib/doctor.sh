@@ -113,7 +113,12 @@ doctor_check_packs() {
         if [ "$rc" -ne 0 ] || { [ "$ex" != "-" ] && [[ "$out" != *"$ex"* ]]; }; then
           if [ "${argv[0]}" = python ]; then
             # Python 은 선택 도구다(MarkItDown 용). 없거나 설치가 안 됐어도 문서 스킬 자체는 정상이므로 오류로 세지 않는다.
-            cl_say "⚠ '$title': Python/MarkItDown 을 쓸 수 없습니다. MS 문서를 마크다운으로 바꾸는 도구만 빠지고 나머지는 정상입니다. 필요하면 Python 3.10 이상을 설치한 뒤 cowork-lite setup 을 다시 실행해 주세요."
+            cl_say "⚠ '$title': Python/MarkItDown 을 쓸 수 없습니다. MS 문서를 마크다운으로 바꾸는 도구만 빠지고 나머지는 정상입니다."
+            if [[ "$out" == *"DLL load failed"* ]]; then
+              cl_say "   원인: Microsoft Visual C++ 런타임이 없습니다. cowork-lite setup 을 다시 실행하면 설치를 시도합니다(또는 winget install Microsoft.VCRedist.2015+.x64)."
+            else
+              cl_say "   필요하면 Python 3.10 이상을 설치한 뒤 cowork-lite setup 을 다시 실행해 주세요. (마지막 오류: $(printf '%s' "$out" | tail -1 | cut -c1-120))"
+            fi
           elif [ "$ver" = 1 ]; then
             _doc_bad "'$title' 점검 명령(${argv[0]})이 실패했습니다" "cowork-lite setup 을 다시 실행해 주세요"
           else
