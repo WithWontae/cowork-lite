@@ -6,7 +6,29 @@
 
 PREREQ_PACKS_FILE_DEFAULT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/packs.json"
 _prereq_packs() { printf '%s\n' "${PREREQ_PACKS_FILE:-$PREREQ_PACKS_FILE_DEFAULT}"; }
-_prereq_cfg() { cl_json_get "$(_prereq_packs)" "prereq.$1.$2"; }
+# packs.json 의 prereq.<도구>.<키> 값을 읽는다. Node 를 설치하기 전(깨끗한 Windows)에는 Node 기반 JSON 도구가 동작하지 않으므로,
+# 먼저 파일의 줄 구조를 직접 읽고(awk), 못 찾을 때만 JSON 도구를 쓴다. 문자열·true/false·숫자 값을 읽는다.
+_prereq_cfg_plain() {
+  [ -f "$(_prereq_packs)" ] || return 1
+  awk -v t="$1" -v k="$2" '
+    /^[[:space:]]*"prereq"[[:space:]]*:[[:space:]]*\{/ { inpre = 1; next }
+    inpre && !blk && $0 ~ ("^[[:space:]]*\"" t "\"[[:space:]]*:[[:space:]]*\\{") { blk = 1; next }
+    blk && /^[[:space:]]*\},?[[:space:]]*$/ { exit }
+    blk {
+      pat = "^[[:space:]]*\"" k "\"[[:space:]]*:[[:space:]]*"
+      if (match($0, pat)) {
+        s = substr($0, RLENGTH + 1)
+        if (substr(s, 1, 1) == "\"") { s = substr(s, 2); sub(/".*$/, "", s) } else { sub(/[ ,\r]*$/, "", s) }
+        print s; found = 1; exit
+      }
+    }
+    END { exit found ? 0 : 1 }' "$(_prereq_packs)"
+}
+_prereq_cfg() {
+  local v
+  v="$(_prereq_cfg_plain "$1" "$2")" && [ -n "$v" ] && { printf '%s\n' "$v"; return 0; }
+  cl_json_get "$(_prereq_packs)" "prereq.$1.$2"
+}
 _prereq_name() { local n; n="$(_prereq_cfg "$1" name)" && printf '%s\n' "$n" || printf '%s\n' "$1"; }
 
 # 새로 설치한 도구가 있을 만한 폴더를 PATH 앞에 붙인다(콜론으로 구분, 테스트는 빈 값으로 끈다).
@@ -107,23 +129,56 @@ prereq_node_pkg_url() {
   return 1
 }
 
-# 내려받기: 실패하면 반쯤 받은 파일을 남기지 않는다.
+# 내려받기: 실패하면 반쯤 받은 파일을 남기지 않고, 이유(curl 오류)를 알린다.
 _prereq_download() {
-  local tmp="${2}.part.$$"
-  if curl -fsSL -o "$tmp" "$1" 2>/dev/null; then mv "$tmp" "$2"; else rm -f "$tmp"; return 1; fi
+  local tmp="${2}.part.$$" err
+  if err="$(curl -fsS -o "$tmp" "$1" 2>&1)"; then mv "$tmp" "$2"; else
+    rm -f "$tmp"
+    cl_warn "내려받지 못했습니다: $1"
+    [ -n "$err" ] && cl_warn "  이유: $err"
+    return 1
+  fi
 }
 
-# Windows: winget으로 설치한다(관리자 권한 확인 창이 뜰 수 있다).
+# Windows: winget으로 설치한다(권한 확인 창이 뜰 수 있다). 실패하면 이유를 알린다.
 _prereq_winget_install() {
-  local id
-  id="$(_prereq_cfg "$1" winget_id)" || return 1
-  command -v winget >/dev/null 2>&1 || { cl_warn "winget을 찾을 수 없습니다."; return 1; }
+  local id rc
+  id="$(_prereq_cfg "$1" winget_id)"
+  if [ -z "$id" ]; then cl_warn "설치 정보(winget 이름)를 packs.json 에서 읽지 못했습니다: $1"; return 1; fi
+  if ! command -v winget >/dev/null 2>&1; then
+    cl_warn "winget(Windows 패키지 관리자)을 찾을 수 없습니다. Windows 10 에서는 Microsoft Store 의 '앱 설치 관리자(App Installer)'를 설치하거나 업데이트하면 생깁니다."
+    return 1
+  fi
   winget install --id "$id" -e --source winget --accept-package-agreements --accept-source-agreements
+  rc=$?
+  [ $rc -eq 0 ] || cl_warn "winget 이 오류로 끝났습니다(종료 코드 $rc, 패키지 $id)."
+  return $rc
+}
+
+# Windows 에서 Claude Code 는 공식 PowerShell 설치기로도 설치할 수 있다(winget 이 없거나 실패했을 때의 대안).
+_prereq_claude_ps1_install() {
+  local url rc
+  url="$(_prereq_cfg claude installer_ps1_url)"
+  [ -n "$url" ] || return 1
+  command -v powershell.exe >/dev/null 2>&1 || { cl_warn "PowerShell 을 찾을 수 없어 공식 설치기를 쓸 수 없습니다."; return 1; }
+  cl_say "공식 설치기($url)로 설치합니다."
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "irm '$url' | iex"
+  rc=$?
+  [ $rc -eq 0 ] || cl_warn "공식 설치기가 오류로 끝났습니다(종료 코드 $rc)."
+  return $rc
 }
 
 _prereq_real_install() {
   local tool="$1" dir url pkg rc=0
-  [ "$(cl_os)" = windows ] && { _prereq_winget_install "$tool"; return $?; }
+  if [ "$(cl_os)" = windows ]; then
+    _prereq_winget_install "$tool"; rc=$?
+    [ $rc -eq 0 ] && return 0
+    if [ "$tool" = claude ]; then
+      cl_warn "winget 으로 설치하지 못해 공식 설치기로 다시 시도합니다."
+      _prereq_claude_ps1_install; return $?
+    fi
+    return $rc
+  fi
   dir="$(mktemp -d "${TMPDIR:-/tmp}/cowork-lite-dl.XXXXXX")" || return 1
   case "$tool" in
     claude)
@@ -144,8 +199,10 @@ _prereq_real_install() {
   return $rc
 }
 
+# 설치 시도의 오류 출력과 종료 코드를 $(cl_home)/install.log 에 남긴다(왜 실패했는지 나중에 볼 수 있게). 종료 코드는 PREREQ_LAST_RC 에도 둔다.
 prereq_install() {
-  local tool="$1" name; name="$(_prereq_name "$tool")"
+  local tool="$1" name log rc; name="$(_prereq_name "$tool")"
+  log="$(cl_home)/install.log"; mkdir -p "$(cl_home)" 2>/dev/null
   cl_say "$name 을(를) 설치합니다. 몇 분 걸릴 수 있습니다."
   if [ "$tool" = node ]; then
     if [ "$(cl_os)" = windows ]; then
@@ -154,12 +211,35 @@ prereq_install() {
       cl_say "암호 입력 창이 나오면 Mac 로그인 암호를 입력해 주세요. (입력해도 화면에 글자가 보이지 않는 것이 정상입니다)"
     fi
   fi
-  if [ -n "$COWORK_LITE_RUNNER" ]; then "$COWORK_LITE_RUNNER" install "$tool"; else _prereq_real_install "$tool"; fi
+  printf '[%s] %s 설치 시작\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$tool" >> "$log" 2>/dev/null
+  if [ -n "$COWORK_LITE_RUNNER" ]; then "$COWORK_LITE_RUNNER" install "$tool" 2> >(tee -a "$log" >&2)
+  else _prereq_real_install "$tool" 2> >(tee -a "$log" >&2); fi
+  rc=$?
+  PREREQ_LAST_RC=$rc
+  printf '[%s] %s 설치 종료 코드 %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$tool" "$rc" >> "$log" 2>/dev/null
+  return $rc
 }
 
+# 설치가 막혔을 때 IT 담당자에게 전달할 내용. 개인 PC에서는 보통 관리자 권한이 필요하지 않으므로, 회사 보안 정책으로 막힌 경우에만 요청하도록 한다.
 prereq_it_request_text() {
   local name official; name="$(_prereq_name "$1")"; official="$(_prereq_cfg "$1" official)"
-  printf 'IT 담당자에게 이렇게 요청해 주세요:\n- 설치할 프로그램: %s\n- 공식 주소: %s\n- 개인 PC에 설치하려면 관리자 권한이 필요합니다.\n' "$name" "$official"
+  printf 'IT 담당자에게 이렇게 요청해 주세요:\n- 설치할 프로그램: %s\n- 공식 주소: %s\n- 회사 보안 정책으로 설치가 막힌 경우에만 필요합니다. 이 프로그램을 설치할 수 있게 허용해 달라고 요청해 주세요.\n' "$name" "$official"
+}
+
+# 설치 처음에 환경을 알려 준다. 막지는 않는다(Windows 10 에서도 될 수 있다).
+# Windows 11 이 아니면(빌드 22000 미만) 확인한 환경이 아니라고 알리고, winget 이 없으면 미리 알린다.
+prereq_env_notice() {
+  local ver build
+  cl_is_windows && command -v cmd.exe >/dev/null 2>&1 || return 0
+  ver="$(cmd.exe /c ver 2>/dev/null | tr -d '\r' | sed -n 's/.*\[[^0-9]*\([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p' | head -1)"
+  build="${ver##*.}"
+  if [ -n "$build" ] && [ "$build" -lt 22000 ] 2>/dev/null; then
+    cl_say "ℹ 이 PC는 Windows 10(빌드 $build)으로 보입니다. cowork-lite 는 Windows 11 과 Mac 에서 확인했습니다. 계속 진행하지만 일부 단계가 안 될 수 있습니다."
+  fi
+  if ! command -v winget >/dev/null 2>&1; then
+    cl_say "ℹ winget(Windows 패키지 관리자)이 없습니다. Claude Code 는 공식 설치기로 설치하고, 그 밖의 도구(Node.js 등)는 공식 주소를 안내합니다."
+  fi
+  return 0
 }
 
 # GitHub 로그인·git 연결. 로그인은 브라우저에서 사용자가 직접 한다(암호·토큰은 이 프로그램이 받거나 저장하지 않는다).
@@ -211,13 +291,15 @@ prereq_python_optional() { _prereq_optional python; return 0; }
 prereq_run_all() {
   local tool name rc
   prereq_refresh_path
+  prereq_env_notice
   for tool in claude node; do
     name="$(_prereq_name "$tool")"
     prereq_check "$tool"; rc=$?
     if [ $rc -eq 0 ]; then cl_say "✔ $name 이(가) 이미 설치되어 있습니다."; continue; fi
     [ $rc -eq 2 ] && cl_say "$name 버전이 낮아 새로 설치합니다."
     if ! prereq_install "$tool"; then
-      cl_warn "✘ $name 설치에 실패했습니다. 인터넷 연결이나 회사 보안 때문일 수 있습니다."
+      cl_warn "✘ $name 설치에 실패했습니다(종료 코드 ${PREREQ_LAST_RC:-?}). 위에 나온 오류 문구와 기록($(cl_home)/install.log)에서 이유를 볼 수 있습니다."
+      cl_warn "인터넷 연결이나 회사 보안 때문일 수 있습니다."
       cl_warn "문제가 계속되면 같은 명령을 다시 실행해 보시고, 그래도 안 되면 아래 내용을 IT 담당자에게 전달해 주세요."
       cl_warn "$(prereq_it_request_text "$tool")"
       return 1

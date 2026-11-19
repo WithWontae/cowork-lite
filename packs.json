@@ -6,6 +6,7 @@
       "min": "0.0.0",
       "official": "https://docs.claude.com/en/docs/claude-code/setup",
       "installer_url": "https://claude.ai/install.sh",
+      "installer_ps1_url": "https://claude.ai/install.ps1",
       "winget_id": "Anthropic.ClaudeCode"
     },
     "node": {
