@@ -4,6 +4,9 @@ Claude Code를 안전하게, 설치 한 번으로 쓰게 해 주는 도구입니
 
 > **Mac**과 **Windows 11**을 지원합니다. 아래에서 쓰는 컴퓨터에 맞는 쪽을 따라 하세요.
 
+📖 **그림과 사용 예시가 있는 사용 가이드:** https://brief.wontae.click/ai/lite-guide
+(Claude Code에 이 주소를 알려 주고 "이 페이지를 읽고 cowork-lite 설치를 안내해 줘"라고 하면 설치 안내와 설치 후 점검을 받을 수 있습니다.)
+
 ## 설치하기 (Windows)
 
 ### 1단계. PowerShell 열기
