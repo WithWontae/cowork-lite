@@ -16,9 +16,15 @@ trap cleanup EXIT
 
 if [ -z "$src" ]; then
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/cowork-lite-src.XXXXXX")" || { echo "임시 폴더를 만들 수 없습니다."; exit 1; }
-  echo "cowork-lite를 내려받는 중입니다…"
-  if ! curl -fsSL "$tarball" | tar -xz -C "$tmp" --strip-components=1; then
-    echo "내려받지 못했습니다. 인터넷 연결이나 회사 보안 때문일 수 있습니다. 잠시 뒤에 다시 시도해 주세요."
+  echo "cowork-lite를 내려받는 중입니다… (최대 3분, 주소: $tarball)"
+  # 멈춘 것처럼 보이지 않게 시간 제한을 두고, 실패하면 이유(curl 오류)를 보여 준다. 내려받기와 풀기를 나눠 어느 단계에서 실패했는지 안다.
+  if ! err="$(curl -fsS --connect-timeout 20 --max-time 180 -o "$tmp/src.tar.gz" "$tarball" 2>&1)"; then
+    echo "내려받지 못했습니다. 인터넷 연결이나 회사 보안(프록시·방화벽) 때문일 수 있습니다. 잠시 뒤에 다시 시도해 주세요."
+    [ -n "$err" ] && echo "  이유: $err"
+    exit 1
+  fi
+  if ! tar -xzf "$tmp/src.tar.gz" -C "$tmp" --strip-components=1; then
+    echo "내려받은 파일을 풀지 못했습니다. 잠시 뒤에 다시 시도해 주세요."
     exit 1
   fi
   src="$tmp"
